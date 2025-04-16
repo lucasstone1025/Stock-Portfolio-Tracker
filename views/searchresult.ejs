@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search Result</title>
+    <link href="/styles.css" rel="stylesheet" />
+</head>
+<body>
+    <% if(error) { %>
+        <p><%= error %> </p>
+        <a href = "/search">Back to Search</a>
+        <a href = "/dashboard">Back to Dashboard</a>
+    <% } else if (stock) { %>
+        <h2>Stock Found: </h2>
+        <p><strong>Symbol:</strong> <%= stock.symbol %> </p>
+        <p><strong>Price:</strong> <%= stock.price %></p>
+
+        <form action="/add" method="POST">
+            <input type="hidden" name="symbol" value="<%= stock.symbol %>" />
+            <input type="hidden" name="price" value="<%= stock.price %>" />
+            <input type="hidden" name="dayhigh" value="<%= stock.dayhigh %>" />
+            <input type="hidden" name="daylow" value="<%= stock.daylow %>" />
+            <button type="submit" name="action" value="add">Add to Watchlist</button>
+            <button type="submit" name="action" value="back">Back to Search</button>
+        </form>
+    <% } %>
+    
+</body>
+</html>

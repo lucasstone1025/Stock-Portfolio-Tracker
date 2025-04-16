@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alerts</title>
+    <link href="/styles.css" rel="stylesheet" />
+</head>
+<body>
+    <div class="alerts-container">
+        <h1>Your Active Alerts</h1>
+
+        <% if(alerts.length === 0) { %>
+            <p>You have not set any alerts yet. Add some from your watchlist!</p>
+            <a href="/watchlist">Go to Watchlist</a>
+        <% } else { %>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Direction</th>
+                        <th>Target Price</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% alerts.forEach(alert => { %>
+                        <tr>
+                            <td><%= alert.symbol %></td>
+                            <td><%= alert.direction === "up" ? "Above" : "Below" %></td>
+                            <td>$<%= alert.target_price %></td>
+                            <td>$<%= alert.triggered ? "Triggered" : "Active" %></td>
+                            <td>
+                                <form action="/deletealert" method="POST" style="display:inline;">
+                                    <input type="hidden" name="alert_id" value="<%= alert.id %>">
+                                    <button type="submit">Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                    <% }) %>
+                </tbody>
+            </table>
+        <% } %>
+
+        <br><a href="/dashboard">Back to Dashboard</a>
+    </div>
+    
+</body>
+</html>

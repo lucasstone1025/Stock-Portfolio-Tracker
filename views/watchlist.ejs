@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Watchlist</title>
+    <link href="/styles.css" rel="stylesheet" />
+</head>
+<body>
+    <div class="watchlist-container">
+        <h1>Your Watchlist</h1>
+
+        <% if (stocks.length === 0) { %>
+            <p>You have not added any stocks yet! Go add some.</p>
+        <% } else { %>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Price</th>
+                        <th>Day High</th>
+                        <th>Day Low</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% stocks.forEach(stock => { %>
+                        <tr>
+                            <td><%= stock.symbol %></td>
+                            <td>$<%= stock.currentprice %></td>
+                            <td>$<%= stock.dayhigh %></td>
+                            <td>$<%= stock.daylow %></td>
+                            <td>
+                                <form action="/delete" method="POST" style="display:inline">
+                                    <input type="hidden" name="symbol" value="<%= stock.symbol %>">
+                                    <button type="submit">Delete Stock</button>
+                                </form>
+                                <form action="/refresh" method="POST" style="display:inline">
+                                    <input type="hidden" name="symbol" value="<%= stock.symbol %>">
+                                    <button type="submit">Refresh Stock</button>
+                                </form>
+                                <form action="/setalert" method="POST" style="margin-top: 10px;">
+                                    <input type="hidden" name="symbol" value="<%= stock.symbol %>" />
+                                    <label>Alert if price goes: 
+                                        <select name="direction">
+                                            <option value="up">above</option>
+                                            <option value="down">below</option>
+                                        </select>
+                                    </label>
+                                    <input type="number" step="0.1" name="target_price" placeholder="Target price" required />
+                                    <button type="submit">Set Alert</button>
+                                </form>
+                                <form action="/checkalerts" method="GET">
+                                    <button type="submit">Refresh Alerts</button>
+                                </form>
+                            </td>
+                        </tr>
+                    <% }) %>
+                </tbody>
+            </table>
+        <% } %>
+        <br>
+        
+        <a href = "/dashboard">Back to Dashboard</a>
+    </div>
+</body>
+</html>
