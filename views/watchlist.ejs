@@ -9,6 +9,7 @@
 <body>
     <div class="watchlist-container">
         <h1>Your Watchlist</h1>
+        <h2>Total Number of Stocks: <%=stockCount%></h2>
 
         <% if (stocks.length === 0) { %>
             <p>You have not added any stocks yet! Go add some.</p>
@@ -17,7 +18,9 @@
                 <thead>
                     <tr>
                         <th>Symbol</th>
+                        <th>Name</th>
                         <th>Price</th>
+                        <th>Market Cap</th>
                         <th>Day High</th>
                         <th>Day Low</th>
                     </tr>
@@ -26,7 +29,15 @@
                     <% stocks.forEach(stock => { %>
                         <tr>
                             <td><%= stock.symbol %></td>
+                            <td><%= stock.companyname %></td>
                             <td>$<%= stock.currentprice %></td>
+                            <td>
+                                <% if (stock.marketcap) { %>
+                                  <%= (stock.marketcap / 1000).toFixed(1) %>M
+                                <% } else { %>
+                                  N/A
+                                <% } %>
+                            </td>
                             <td>$<%= stock.dayhigh %></td>
                             <td>$<%= stock.daylow %></td>
                             <td>

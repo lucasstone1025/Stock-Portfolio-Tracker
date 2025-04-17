@@ -79,6 +79,7 @@ async function checkAlertsAndNotify() {
   }
 }
 
+
 function requireLogin(req, res, next) {
   if(!req.session.userId) {
     return res.redirect("/login"); //go back to login
@@ -115,16 +116,23 @@ app.get("/watchlist", requireLogin, async(req,res) => {
 
   try{
     const result = await db.query(
-      `SELECT s.symbol, s.currentprice, s.dayhigh, s.daylow
+      `SELECT s.symbol, s.companyname, s.marketcap, s.currentprice, s.dayhigh, s.daylow
       FROM watchlist w
       JOIN stocks s ON w.stock_id = s.stockid
       WHERE w.user_id = $1`,
       [userId]
     );
 
+    const countResult = await db.query(
+      "SELECT COUNT(*) FROM watchlist WHERE user_id = $1",
+      [userId]
+    );
+
+    const stockCount = countResult.rows[0].count;
+
     const stocks = result.rows;
 
-    res.render("watchlist.ejs", { stocks });
+    res.render("watchlist.ejs", { stocks, stockCount });
   } catch (err) {
     console.log(err);
     res.send("Unable to load watchlist");
@@ -203,8 +211,8 @@ app.post("/login", async (req,res) => {
 
 app.post("/search", async (req,res) => {
   const symbol = req.body.symbol.toUpperCase();
+  const { action } = req.body;
 
-  const { action, price, dayhigh, daylow } = req.body;
   if(action == "back"){
     return res.redirect("/dashboard");
   }
@@ -222,13 +230,54 @@ app.post("/search", async (req,res) => {
       return res.render("searchresult.ejs", {error: "No stock found with that symbol.", stock: null});
     };
 
+    // check our db first
+    let companyName = null;
+    let marketCap = null;
+
+    const infoQuery = await db.query(
+      "SELECT companyname, marketcap FROM stocks WHERE symbol ILIKE $1",
+      [symbol]
+    );
+
+    if (infoQuery.rows.length > 0) {
+      const rawName = infoQuery.rows[0].companyname;
+      companyName = (!rawName || rawName === 'null' || rawName === 'N/A') ? null : rawName;
+      marketCap = infoQuery.rows[0].marketcap;
+    }
+    
+
+    // Fetch from profile2 if missing
+    if (!companyName || !marketCap) {
+      const profileRes = await axios.get("https://finnhub.io/api/v1/stock/profile2", {
+        params: { symbol, token: API_KEY }
+      });
+    
+      if (profileRes.data) {
+        companyName = profileRes.data.name || profileRes.data.ticker || "N/A";
+        marketCap = profileRes.data.marketCapitalization || marketCap;
+    
+        await db.query(
+          `INSERT INTO stocks (symbol, companyname, marketcap)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (symbol)
+           DO UPDATE SET 
+             companyname = COALESCE(EXCLUDED.companyname, stocks.companyname),
+             marketcap = COALESCE(EXCLUDED.marketcap, stocks.marketcap)`,
+          [symbol, companyName, marketCap]
+        );
+      }
+    }
+
+    
     const stock = {
       symbol: symbol,
-      name: "N/A",
+      name: companyName || "N/A",
+      marketCap: marketCap,
       price: data.c ? data.c.toFixed(2) : "0.00",
       dayhigh: data.h ? data.h.toFixed(2) : "0.00",
       daylow: data.l ? data.l.toFixed(2) : "0.00"
     };
+
 
     res.render("searchresult.ejs", { error: null, stock });
   } catch(err) {
@@ -238,7 +287,7 @@ app.post("/search", async (req,res) => {
 });
 
 app.post("/add", async (req,res) => {
-  const { action, symbol, price, dayhigh, daylow } = req.body;
+  const { action, symbol, price, dayhigh, daylow, companyname } = req.body;
 
   if(action == "back") {
     return res.redirect("/search");
@@ -258,10 +307,10 @@ app.post("/add", async (req,res) => {
         stockId = result.rows[0].stockid;
       } else {
         const insert = await db.query(
-          `INSERT INTO stocks (symbol, currentprice, dayhigh, daylow)
-          VALUES ($1, $2, $3, $4)
+          `INSERT INTO stocks (symbol, companyname, currentprice, dayhigh, daylow)
+          VALUES ($1, $2, $3, $4, $5)
           RETURNING stockid`,
-          [symbol, price, dayhigh, daylow]
+          [symbol, companyname, price, dayhigh, daylow]
         );
         stockId = insert.rows[0].stockid;
       }
