@@ -7,6 +7,7 @@
     <link href="/styles.css" rel="stylesheet" />
 </head>
 <body>
+    <%- include('partials/header.ejs') %>
     <div class="alerts-container">
         <h1>Your Active Alerts</h1>
 
@@ -22,6 +23,7 @@
                         <th>Target Price</th>
                         <th>Status</th>
                         <th>Actions</th>
+                        <th>Refresh</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -30,11 +32,17 @@
                             <td><%= alert.symbol %></td>
                             <td><%= alert.direction === "up" ? "Above" : "Below" %></td>
                             <td>$<%= alert.target_price %></td>
-                            <td>$<%= alert.triggered ? "Triggered" : "Active" %></td>
+                            <td><%= alert.triggered ? "Triggered" : "Active" %></td>
                             <td>
                                 <form action="/deletealert" method="POST" style="display:inline;">
                                     <input type="hidden" name="alert_id" value="<%= alert.id %>">
                                     <button type="submit">Delete</button>
+                                </form>
+                            </td>
+                            <td>
+                                <form action="/checkalerts" method="GET">
+                                    <input type="hidden" name="origin" value="alerts" />
+                                    <button type="submit">Refresh Alerts</button>
                                 </form>
                             </td>
                         </tr>
@@ -46,5 +54,6 @@
         <br><a href="/dashboard">Back to Dashboard</a>
     </div>
     
+    <%- include('partials/footer.ejs') %>
 </body>
 </html>

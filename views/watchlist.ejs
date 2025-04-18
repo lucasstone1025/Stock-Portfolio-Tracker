@@ -7,9 +7,24 @@
     <link href="/styles.css" rel="stylesheet" />
 </head>
 <body>
+    <%- include('partials/header.ejs') %>
     <div class="watchlist-container">
-        <h1>Your Watchlist</h1>
-        <h2>Total Number of Stocks: <%=stockCount%></h2>
+        <div class="top-watchlist-container">
+            <h1>Your Watchlist</h1>
+            <h2>Total Number of Stocks: <%=stockCount%></h2>
+
+            <form method="GET" action="/watchlist" class="d-flex align-items-center mb-3">
+                <label for="filter" class="me-2">Filter By:</label>
+                <select name="filter" id="filter" class="form-select w-auto" onchange="this.form.submit()">
+                <option value="def"   <%= filter==='def'   ? 'selected' : '' %>>Default</option>
+                <option value="alpha" <%= filter==='alpha' ? 'selected' : '' %>>Alphabetical</option>
+                <option value="asc"   <%= filter==='asc'   ? 'selected' : '' %>>Increasing Market Cap</option>
+                <option value="desc"  <%= filter==='desc'  ? 'selected' : '' %>>Decreasing Market Cap</option>
+                </select>
+            </form>
+        </div>
+          
+          
 
         <% if (stocks.length === 0) { %>
             <p>You have not added any stocks yet! Go add some.</p>
@@ -23,6 +38,7 @@
                         <th>Market Cap</th>
                         <th>Day High</th>
                         <th>Day Low</th>
+                        <th>Alerts and Refresh/Delete</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -33,9 +49,9 @@
                             <td>$<%= stock.currentprice %></td>
                             <td>
                                 <% if (stock.marketcap) { %>
-                                  <%= (stock.marketcap / 1000).toFixed(1) %>M
+                                    <%= (stock.marketcap / 1000).toFixed(1) %>M
                                 <% } else { %>
-                                  N/A
+                                    N/A
                                 <% } %>
                             </td>
                             <td>$<%= stock.dayhigh %></td>
@@ -45,10 +61,11 @@
                                     <input type="hidden" name="symbol" value="<%= stock.symbol %>">
                                     <button type="submit">Delete Stock</button>
                                 </form>
-                                <form action="/refresh" method="POST" style="display:inline">
-                                    <input type="hidden" name="symbol" value="<%= stock.symbol %>">
-                                    <button type="submit">Refresh Stock</button>
-                                </form>
+                                <a href="/watchlist?filter=<%= filter %>" class="btn-refresh">
+                                    Refresh Stocks
+                                </a>
+                                
+
                                 <form action="/setalert" method="POST" style="margin-top: 10px;">
                                     <input type="hidden" name="symbol" value="<%= stock.symbol %>" />
                                     <label>Alert if price goes: 
@@ -57,12 +74,10 @@
                                             <option value="down">below</option>
                                         </select>
                                     </label>
-                                    <input type="number" step="0.1" name="target_price" placeholder="Target price" required />
+                                    <input type="number" step="0.01" name="target_price" placeholder="Target price" required />
                                     <button type="submit">Set Alert</button>
                                 </form>
-                                <form action="/checkalerts" method="GET">
-                                    <button type="submit">Refresh Alerts</button>
-                                </form>
+                                <hr/>
                             </td>
                         </tr>
                     <% }) %>
@@ -73,5 +88,6 @@
         
         <a href = "/dashboard">Back to Dashboard</a>
     </div>
+    <%- include('partials/footer.ejs') %>
 </body>
 </html>

@@ -100,7 +100,7 @@ app.get("/register", async (req,res) => {
 });
 
 app.get("/dashboard", requireLogin, (req,res) => {
-  res.render("dashboard.ejs", {username: req.session.username});
+  res.render("dashboard.ejs", {first_name: req.session.first_name});
 });
 
 app.get("/search", requireLogin, async (req,res) => {
@@ -111,37 +111,55 @@ app.get("/logout", async (req,res) => {
   res.redirect("/login");
 });
 
-app.get("/watchlist", requireLogin, async(req,res) => {
+app.get("/watchlist", requireLogin, async (req, res) => {
   const userId = req.session.userId;
+  const filter = req.query.filter || "def";
 
-  try{
-    const result = await db.query(
-      `SELECT s.symbol, s.companyname, s.marketcap, s.currentprice, s.dayhigh, s.daylow
-      FROM watchlist w
-      JOIN stocks s ON w.stock_id = s.stockid
-      WHERE w.user_id = $1`,
+  let sql = `
+    SELECT 
+      s.symbol,
+      s.companyname,
+      s.marketcap,
+      s.currentprice,
+      s.dayhigh,
+      s.daylow
+    FROM watchlist w
+    JOIN stocks    s ON w.stock_id = s.stockid
+    WHERE w.user_id = $1
+  `;
+  if (filter === "alpha") {
+    sql += " ORDER BY s.symbol";
+  } else if (filter === "asc") {
+    sql += " ORDER BY s.marketcap";
+  } else if (filter === "desc") {
+    sql += " ORDER BY s.marketcap DESC";
+  }
+
+  try {
+    const { rows: stocks } = await db.query(sql, [userId]);
+
+    const { rows: countRows } = await db.query(
+      "SELECT COUNT(*)::int AS count FROM watchlist WHERE user_id = $1",
       [userId]
     );
+    const stockCount = countRows[0].count;
 
-    const countResult = await db.query(
-      "SELECT COUNT(*) FROM watchlist WHERE user_id = $1",
-      [userId]
-    );
-
-    const stockCount = countResult.rows[0].count;
-
-    const stocks = result.rows;
-
-    res.render("watchlist.ejs", { stocks, stockCount });
+  
+    res.render("watchlist.ejs", {
+      stocks,
+      stockCount,
+      filter
+    });
   } catch (err) {
     console.log(err);
     res.send("Unable to load watchlist");
   }
 });
 
+
 app.get("/checkalerts", requireLogin, async (req,res) => {
   await checkAlertsAndNotify();
-  res.redirect("/watchlist");
+  res.redirect("/alerts");
 });
 
 app.get("/alerts", requireLogin, async (req,res) => {
@@ -167,13 +185,13 @@ app.get("/alerts", requireLogin, async (req,res) => {
 
 
 app.post("/register", async (req,res) => {
-  const { username, email, password } = req.body;
+  const { username, email, password, first_name } = req.body;
   const hashedPassword = await bcrypt.hash(password, 10);
 
   try {
     await db.query(
-      "INSERT INTO users (username, password_hash, email) VALUES ($1, $2, $3)",
-      [username, hashedPassword, email]
+      "INSERT INTO users (username, password_hash, email, first_name) VALUES ($1, $2, $3, $4)",
+      [username, hashedPassword, email, first_name]
     );
     res.redirect("/login");
   } catch(err) {
@@ -196,6 +214,7 @@ app.post("/login", async (req,res) => {
       if(isValid) {
         req.session.userId = user.id;
         req.session.username = user.username;
+        req.session.first_name = user.first_name;
         res.redirect("/dashboard");
       } else {
         res.send("Incorrect Password");
@@ -230,53 +249,30 @@ app.post("/search", async (req,res) => {
       return res.render("searchresult.ejs", {error: "No stock found with that symbol.", stock: null});
     };
 
-    // check our db first
-    let companyName = null;
-    let marketCap = null;
-
-    const infoQuery = await db.query(
-      "SELECT companyname, marketcap FROM stocks WHERE symbol ILIKE $1",
-      [symbol]
-    );
-
-    if (infoQuery.rows.length > 0) {
-      const rawName = infoQuery.rows[0].companyname;
-      companyName = (!rawName || rawName === 'null' || rawName === 'N/A') ? null : rawName;
-      marketCap = infoQuery.rows[0].marketcap;
-    }
-    
-
-    // Fetch from profile2 if missing
-    if (!companyName || !marketCap) {
-      const profileRes = await axios.get("https://finnhub.io/api/v1/stock/profile2", {
-        params: { symbol, token: API_KEY }
-      });
-    
-      if (profileRes.data) {
-        companyName = profileRes.data.name || profileRes.data.ticker || "N/A";
-        marketCap = profileRes.data.marketCapitalization || marketCap;
-    
-        await db.query(
-          `INSERT INTO stocks (symbol, companyname, marketcap)
-           VALUES ($1, $2, $3)
-           ON CONFLICT (symbol)
-           DO UPDATE SET 
-             companyname = COALESCE(EXCLUDED.companyname, stocks.companyname),
-             marketcap = COALESCE(EXCLUDED.marketcap, stocks.marketcap)`,
-          [symbol, companyName, marketCap]
-        );
+    const response2 = await axios.get("https://finnhub.io/api/v1/stock/profile2", {
+      params: {
+        symbol : symbol,
+        token : API_KEY
       }
+    });
+
+    const data2 = response2.data;
+
+    if(!data2.name){
+      return res.render("searchresult.ejs", {error: "No stock found with that symbol...", stock: null});
     }
 
-    
+
     const stock = {
       symbol: symbol,
-      name: companyName || "N/A",
-      marketCap: marketCap,
-      price: data.c ? data.c.toFixed(2) : "0.00",
-      dayhigh: data.h ? data.h.toFixed(2) : "0.00",
-      daylow: data.l ? data.l.toFixed(2) : "0.00"
+      companyname: data2.name,
+      marketCap: data2.marketCapitalization,
+      price: data.c.toFixed(2),
+      dayhigh: data.h.toFixed(2),
+      daylow: data.l.toFixed(2)
     };
+
+    
 
 
     res.render("searchresult.ejs", { error: null, stock });
@@ -287,7 +283,9 @@ app.post("/search", async (req,res) => {
 });
 
 app.post("/add", async (req,res) => {
-  const { action, symbol, price, dayhigh, daylow, companyname } = req.body;
+
+  const { action, symbol, price, dayhigh, daylow, companyname, marketCap } = req.body;
+
 
   if(action == "back") {
     return res.redirect("/search");
@@ -307,10 +305,10 @@ app.post("/add", async (req,res) => {
         stockId = result.rows[0].stockid;
       } else {
         const insert = await db.query(
-          `INSERT INTO stocks (symbol, companyname, currentprice, dayhigh, daylow)
-          VALUES ($1, $2, $3, $4, $5)
+          `INSERT INTO stocks (symbol, currentprice, dayhigh, daylow, companyname, marketcap)
+          VALUES ($1, $2, $3, $4, $5, $6)
           RETURNING stockid`,
-          [symbol, companyname, price, dayhigh, daylow]
+          [symbol, price, dayhigh, daylow, companyname, marketCap]
         );
         stockId = insert.rows[0].stockid;
       }
@@ -328,6 +326,7 @@ app.post("/add", async (req,res) => {
       res.send("Failed to add to watchlist");
     }
   }
+
 
 });
 
@@ -366,15 +365,24 @@ app.post("/refresh", async (req,res) => {
     });
     const quote = response.data;
 
+    const response2 = await axios.get("https://finnhub.io/api/v1/stock/profile2", {
+      params: {
+        symbol: symbol,
+        token: API_KEY
+      }
+    });
+
+    const profile = response2.data
+
     if(!quote.c) {
       return res.send("Failed to refresh stock.");
     }
 
     await db.query (
       `UPDATE stocks
-      SET currentprice = $1, dayhigh = $2, daylow = $3, updatedat = CURRENT_TIMESTAMP
-      WHERE symbol = $4`,
-      [quote.c, quote.h, quote.l, symbol]
+      SET currentprice = $1, dayhigh = $2, daylow = $3, marketCap = $4, updatedat = CURRENT_TIMESTAMP
+      WHERE symbol = $5`,
+      [quote.c, quote.h, quote.l, profile.marketCapitalization, symbol]
     );
 
     res.redirect("/watchlist");

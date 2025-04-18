@@ -7,34 +7,37 @@
     <link href="/styles.css" rel="stylesheet" />
 </head>
 <body>
-    <% if(error) { %>
-        <p><%= error %> </p>
-        <a href = "/search">Back to Search</a>
-        <a href = "/dashboard">Back to Dashboard</a>
-    <% } else if (stock) { %>
-        <h2>Stock Found: </h2>
-        <p><strong>Symbol:</strong> <%= stock.symbol %> </p>
-        <p><strong>Name:</strong> <%= stock.name %> </p>
-        <p><strong>Price:</strong> <%= stock.price %></p>
-        <p><strong>Market Cap:</strong>
-                                        <% if (stock.marketCap) { %>
-                                            <%= (stock.marketCap / 1000).toFixed(1) %>M
-                                        <% } else { %>
-                                            N/A
-                                        <% } %>
-                                    </p>
+    <%- include('partials/header.ejs') %>
+    <div class="result-container">
+        <% if(error) { %>
+            <p><%= error %> </p>
+            <a href = "/search">Back to Search</a>
+            <a href = "/dashboard">Back to Dashboard</a>
+        <% } else if (stock) { %>
+            <h2>Stock Found: </h2>
+            <p><strong>Symbol:</strong> <%= stock.symbol %> </p>
+            <p><strong>Name:</strong> <%= stock.companyname %> </p>
+            <p><strong>Price:</strong> <%= stock.price %></p>
+            <p><strong>Market Cap:</strong>
+                                            <% if (stock.marketCap) { %>
+                                                <%= (stock.marketCap / 1000).toFixed(1) %>M
+                                            <% } else { %>
+                                                N/A
+                                            <% } %>
+                                        </p>
 
-        <form action="/add" method="POST">
-            <input type="hidden" name="symbol" value="<%= stock.symbol %>" />
-            <input type="hidden" name="companyname" value="<%= stock.name %>" />
-            <input type="hidden" name="price" value="<%= stock.price %>" />
-            <input type="hidden" name="marketcap" value="<%= stock.marketCap %>" />
-            <input type="hidden" name="dayhigh" value="<%= stock.dayhigh %>" />
-            <input type="hidden" name="daylow" value="<%= stock.daylow %>" />
-            <button type="submit" name="action" value="add">Add to Watchlist</button>
-            <button type="submit" name="action" value="back">Back to Search</button>
-        </form>
-    <% } %>
-    
+            <form action="/add" method="POST">
+                <input type="hidden" name="symbol" value="<%= stock.symbol %>" />
+                <input type="hidden" name="companyname" value="<%= stock.companyname %>" />
+                <input type="hidden" name="price" value="<%= stock.price %>" />
+                <input type="hidden" name="marketCap" value="<%= stock.marketCap %>" />
+                <input type="hidden" name="dayhigh" value="<%= stock.dayhigh %>" />
+                <input type="hidden" name="daylow" value="<%= stock.daylow %>" />
+                <button type="submit" name="action" value="add">Add to Watchlist</button>
+                <button type="submit" name="action" value="back">Back to Search</button>
+            </form>
+        <% } %>
+    </div>
+    <%- include('partials/footer.ejs') %>
 </body>
 </html>

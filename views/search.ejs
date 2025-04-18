@@ -7,15 +7,17 @@
     <link href="/styles.css" rel="stylesheet" />
 </head>
 <body>
+    <%- include('partials/header.ejs') %>
     <div class="stock-container">
         <form action="/search" method="POST">
             <label for="symbol">Ticker Symbol:</label>
-            <input type="text" id="symbol" name="symbol" required />
+            <input type="text" id="symbol" name="symbol" />
             
             <button type="submit" name="action" value="search">Search</button>
             <button type="submit" name="action" value="back">Back to Dashboard</button>
         </form>
     </div>
     
+    <%- include('partials/footer.ejs') %>
 </body>
 </html>
