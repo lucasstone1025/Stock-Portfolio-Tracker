@@ -21,7 +21,7 @@ A lightweight web app that lets you track your favorite stocks, view up‑to‑d
 
 ### 1. Clone the repository
 
-git clone https://github.com/yourusername/stock-watchlist.git
+git clone https://github.com/lucasstone1025/Stock-Watchlist.git
 
 cd stock-watchlist
 
