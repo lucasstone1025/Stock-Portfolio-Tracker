@@ -17,3 +17,13 @@ A lightweight web app that lets you track your favorite stocks, view up‑to‑d
 - Templating: EJS
 - API: finnhub.io - RestAPI that is "one of the most comprehensive financial API available on the market."
 
+# SETUP INSTRUCTIONS
+
+1. Clone the repository
+git clone https://github.com/yourusername/stock-watchlist.git
+cd stock-watchlist
+
+2. Install dependencies
+npm install
+
+3. Set up the database

@@ -1,28 +1,30 @@
 import express from "express";
 import bodyParser from "body-parser";
 import pg from "pg";
+import dotenv from "dotenv";
 import session from "express-session";
 import bcrypt from "bcrypt";
 import axios from "axios";
 import nodemailer from "nodemailer";
 
-const app = express();
-const port = 3000;
-const API_KEY = "d000qg1r01qud9ql5dsgd000qg1r01qud9ql5dt0";
+dotenv.config();
 
+const app = express();
+const port = process.env.PORT || 3000;;
+const API_KEY = process.env.API_KEY;
 const db = new pg.Client({
-  user : "postgres",
-  host : "localhost",
-  database : "stock_watchlist",
-  password : "531924",
-  port : 5432
+  user : process.env.DB_USER,
+  host : process.env.DB_HOST,
+  database : process.env.DB_NAME,
+  password : process.env.DB_PASSWORD,
+  port : process.env.DB_PORT
 });
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: "lucasstone49@gmail.com",
-    pass: "loomlkrytkjzfijb"
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
   }
 })
 
@@ -112,46 +114,65 @@ app.get("/logout", async (req,res) => {
 });
 
 app.get("/watchlist", requireLogin, async (req, res) => {
-  const userId = req.session.userId;
-  const filter = req.query.filter || "def";
+  const userId    = req.session.userId;
+  const filter    = req.query.filter    || "def";
+  const capFilter = req.query.capFilter || null;
 
-  let sql = `
-    SELECT 
-      s.symbol,
-      s.companyname,
-      s.marketcap,
-      s.currentprice,
-      s.dayhigh,
-      s.daylow
-    FROM watchlist w
-    JOIN stocks    s ON w.stock_id = s.stockid
-    WHERE w.user_id = $1
-  `;
+  // build ORDER BY once
+  let orderClause = "";
   if (filter === "alpha") {
-    sql += " ORDER BY s.symbol";
+    orderClause = "ORDER BY s.symbol";
   } else if (filter === "asc") {
-    sql += " ORDER BY s.marketcap";
+    orderClause = "ORDER BY s.marketcap";
   } else if (filter === "desc") {
-    sql += " ORDER BY s.marketcap DESC";
+    orderClause = "ORDER BY s.marketcap DESC";
   }
 
+  const sql = `
+  SELECT
+    s.symbol,
+    s.companyname,
+    s.marketcap,
+    s.currentprice,
+    s.dayhigh,
+    s.daylow,
+    s.sector
+  FROM watchlist w
+  JOIN stocks s ON w.stock_id = s.stockid
+  WHERE w.user_id = $1
+  GROUP BY
+    s.symbol, s.companyname, s.marketcap,
+    s.currentprice, s.dayhigh, s.daylow, s.sector,
+    CASE
+      WHEN s.marketcap <    2000  THEN 'Small Cap'
+      WHEN s.marketcap <=  10000  THEN 'Mid Cap'
+      ELSE                            'Large Cap'
+    END
+  HAVING
+    ($2::text) IS NULL
+    OR CASE
+         WHEN s.marketcap <    2000  THEN 'Small Cap'
+         WHEN s.marketcap <=  10000  THEN 'Mid Cap'
+         ELSE                            'Large Cap'
+       END = $2::text
+  ${orderClause};
+`;
+
+
+
   try {
-    const { rows: stocks } = await db.query(sql, [userId]);
+    const { rows: stocks } = await db.query(sql, [userId, capFilter]);
 
-    const { rows: countRows } = await db.query(
-      "SELECT COUNT(*)::int AS count FROM watchlist WHERE user_id = $1",
-      [userId]
-    );
-    const stockCount = countRows[0].count;
+    const stockCount = stocks.length;
 
-  
     res.render("watchlist.ejs", {
       stocks,
       stockCount,
-      filter
+      filter,
+      capFilter
     });
   } catch (err) {
-    console.log(err);
+    console.error(err);
     res.send("Unable to load watchlist");
   }
 });
@@ -261,7 +282,7 @@ app.post("/search", async (req,res) => {
     if(!data2.name){
       return res.render("searchresult.ejs", {error: "No stock found with that symbol...", stock: null});
     }
-
+    console.log(data2.marketCapitalization);
 
     const stock = {
       symbol: symbol,
@@ -269,7 +290,8 @@ app.post("/search", async (req,res) => {
       marketCap: data2.marketCapitalization,
       price: data.c.toFixed(2),
       dayhigh: data.h.toFixed(2),
-      daylow: data.l.toFixed(2)
+      daylow: data.l.toFixed(2),
+      sector: data2.finnhubIndustry
     };
 
     
@@ -284,7 +306,7 @@ app.post("/search", async (req,res) => {
 
 app.post("/add", async (req,res) => {
 
-  const { action, symbol, price, dayhigh, daylow, companyname, marketCap } = req.body;
+  const { action, symbol, price, dayhigh, daylow, companyname, marketCap, sector } = req.body;
 
 
   if(action == "back") {
@@ -305,10 +327,10 @@ app.post("/add", async (req,res) => {
         stockId = result.rows[0].stockid;
       } else {
         const insert = await db.query(
-          `INSERT INTO stocks (symbol, currentprice, dayhigh, daylow, companyname, marketcap)
-          VALUES ($1, $2, $3, $4, $5, $6)
+          `INSERT INTO stocks (symbol, currentprice, dayhigh, daylow, companyname, marketcap, sector)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
           RETURNING stockid`,
-          [symbol, price, dayhigh, daylow, companyname, marketCap]
+          [symbol, price, dayhigh, daylow, companyname, marketCap, sector]
         );
         stockId = insert.rows[0].stockid;
       }

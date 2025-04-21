@@ -22,12 +22,23 @@
                 <option value="desc"  <%= filter==='desc'  ? 'selected' : '' %>>Decreasing Market Cap</option>
                 </select>
             </form>
+
+            <form method="GET" action="/watchlist" class="d-flex align-items-center">
+                <input type="hidden" name="filter" value="<%= filter %>">
+                <label for="capFilter" class="me-2">Cap:</label>
+                <select name="capFilter" id="capFilter" class="form-select w-auto" onchange="this.form.submit()">
+                  <option value=""          <%= !capFilter                   ? 'selected' : '' %>>All Caps</option>
+                  <option value="Small Cap" <%= capFilter==='Small Cap'      ? 'selected' : '' %>>Small Cap - 0-2M</option>
+                  <option value="Mid Cap"   <%= capFilter==='Mid Cap'        ? 'selected' : '' %>>Mid Cap - 2M-100M</option>
+                  <option value="Large Cap" <%= capFilter==='Large Cap'      ? 'selected' : '' %>>Large Cap - 100M and up</option>
+                </select>
+              </form>
         </div>
           
           
 
         <% if (stocks.length === 0) { %>
-            <p>You have not added any stocks yet! Go add some.</p>
+            <p>No stocks here</p>
         <% } else { %>
             <table>
                 <thead>
@@ -38,6 +49,7 @@
                         <th>Market Cap</th>
                         <th>Day High</th>
                         <th>Day Low</th>
+                        <th>Sector</th>
                         <th>Alerts and Refresh/Delete</th>
                     </tr>
                 </thead>
@@ -56,12 +68,13 @@
                             </td>
                             <td>$<%= stock.dayhigh %></td>
                             <td>$<%= stock.daylow %></td>
+                            <td><%= stock.sector %></td>
                             <td>
                                 <form action="/delete" method="POST" style="display:inline">
                                     <input type="hidden" name="symbol" value="<%= stock.symbol %>">
                                     <button type="submit">Delete Stock</button>
                                 </form>
-                                <a href="/watchlist?filter=<%= filter %>" class="btn-refresh">
+                                <a href="/watchlist?filter=<%= filter %>&capFilter=<%= capFilter %>" class="btn-refresh">
                                     Refresh Stocks
                                 </a>
                                 
