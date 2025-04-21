@@ -20,10 +20,31 @@ A lightweight web app that lets you track your favorite stocks, view up‑to‑d
 # SETUP INSTRUCTIONS
 
 1. Clone the repository
+
 git clone https://github.com/yourusername/stock-watchlist.git
 cd stock-watchlist
 
 2. Install dependencies
+
 npm install
 
 3. Set up the database
+
+createdb stock_watchlist
+psql -U your_pg_user -d stock_watchlist -f db/schema.sql
+
+4. Create your own .env file and fill in your data 
+(can get free finnhub api online @ https://finnhub.io/dashboard (60 requests/min))
+(also if you have Google 2FA, have to use an "App Password" for EMAIL_PASS)
+
+cp .env.example .env
+
+5. Start the App
+
+node index.js
+
+6. Open in your browser
+
+http://localhost:3000
+
+## You can now register an account, search stocks, create watchlists, and set google email price alerts!!
