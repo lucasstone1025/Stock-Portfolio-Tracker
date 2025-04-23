@@ -67,8 +67,7 @@ async function checkAlertsAndNotify() {
           from: '"Stock Watcher" lucasstone49@gmail.com',
           to: alert.email,
           subject: `Price Alert for ${alert.symbol}`,
-          text: `The stock ${alert.symbol} had ${direction === "up" ? "risen above" : "fallen below"} 
-                your target price of $${target}. Current price: $${current}.`
+          text: `The stock ${alert.symbol} had ${direction === "up" ? "risen above" : "fallen below"} your target price of $${target}. Current price: $${current}.`
         });
 
         await db.query(`UPDATE alerts SET triggered = TRUE WHERE id = $1`, [alert.id]);

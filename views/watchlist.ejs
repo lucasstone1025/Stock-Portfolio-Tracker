@@ -74,11 +74,13 @@
                                     <input type="hidden" name="symbol" value="<%= stock.symbol %>">
                                     <button type="submit">Delete Stock</button>
                                 </form>
-                                <a href="/watchlist?filter=<%= filter %>&capFilter=<%= capFilter %>" class="btn-refresh">
-                                    Refresh Stocks
-                                </a>
-                                
-
+                                <form action="/refresh" method="POST" style="display:inline">
+                                    <input type="hidden" name="symbol"     value="<%= stock.symbol %>">
+                                    <input type="hidden" name="filter"     value="<%= filter %>">
+                                    <input type="hidden" name="capFilter"  value="<%= capFilter %>">
+                                    <button type="submit" class="btn-refresh">Refresh</button>
+                                </form>
+                                  
                                 <form action="/setalert" method="POST" style="margin-top: 10px;">
                                     <input type="hidden" name="symbol" value="<%= stock.symbol %>" />
                                     <label>Alert if price goes: 
