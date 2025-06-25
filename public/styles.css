@@ -10,13 +10,21 @@ body{
 
 table, th, td {
     border: 1px solid black;
-  }
+    padding: 10px;
+    border: 1px solid black !important;
+}
+
+thead, th {
+    background-color: #FF6B6B !important;
+    color: white !important;
+    border: 1px solid black !important;
+}
 
 .dash-container {
     border: 2px solid #333;
     border-radius: 4px;
 
-    background-color:#78E0B7;
+    background-color:#FF6B6B;
 
     font-size: 1.25rem;
 
@@ -45,36 +53,10 @@ img {
     align-items: center;
 }
 
-.alerts-container {
-    height : 75vh;
-    width : 100vh;
-    padding-top : 2em;
-    display: grid;
-    justify-content: center;
-    align-items: center;
-    text-align: center;
-}
-
-.alerts-container a {
-    font-size: large;
-}
-
-.login-container {
-    margin : 0 auto;
-    width : 500px;
-}
-
-.center {
-    text-align: center;
-}
-
 .underline {
     text-decoration: underline;
 }
 
-.login-container p {
-    font-size : 1.5rem;
-}
 
 .stock-container {
     
@@ -83,7 +65,7 @@ img {
     border: 2px solid #333;
     border-radius: 4px;
 
-    background-color:#78E0B7;
+    background-color:#FF6B6B;
 
     font-size: 1.25rem;
 
@@ -93,14 +75,8 @@ img {
     width : 50%;
 }
 
-table {
-    background-color: #78E0B7;
-    text-align: center;
-    border: 2px solid;
-}
-
 .result-container {
-    background-color:#78E0B7;
+    background-color:#FF6B6B;
     height: 75vh;
     border: 2px solid #333;
     border-radius: 4px;
@@ -124,9 +100,9 @@ table {
     cursor: pointer;
   }
 
-  .top-watchlist-container {
+.top-watchlist-container {
     text-align: center;
     display: grid;
     justify-content: center;
     align-items: center;
-  }
+}

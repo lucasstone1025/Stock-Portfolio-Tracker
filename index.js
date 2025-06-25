@@ -109,6 +109,11 @@ async function checkAlertsAndNotify() {
   }
 }
 
+function capitalizeFirst(name){
+  if(!name) return "";
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
 
 function requireLogin(req, res, next) {
   if (req.isAuthenticated()) return next();
@@ -139,9 +144,8 @@ app.get("/auth/google/dashboard",
   }
 );
 
-
 app.get("/dashboard", requireLogin, (req,res) => {
-  res.render("dashboard", { firstName: req.user.first_name });
+  res.render("dashboard", { firstName : capitalizeFirst(req.user.first_name) });
 });
 
 app.get("/search", requireLogin, async (req,res) => {
@@ -317,7 +321,6 @@ app.post("/search", async (req,res) => {
     if(!data2.name){
       return res.render("searchresult.ejs", {error: "No stock found with that symbol...", stock: null});
     }
-    console.log(data2.marketCapitalization);
 
     const stock = {
       symbol: symbol,
@@ -530,7 +533,6 @@ passport.use("google", new GoogleStrategy({
   callbackURL: "http://localhost:3000/auth/google/dashboard",
   userProfileURL: "http://www.googleapis.com/oauth2/v3/userinfo",
 }, async (accessToken, refreshToken, profile, cb) => {
-  console.log(profile);
   try {
     const result = await db.query("SELECT * FROM users WHERE email = $1", 
       [profile.email]);
