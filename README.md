@@ -1,4 +1,5 @@
-# Stock Watchlist App
+# TrendTracker
+# LIVE @ https://stock-watchlist-gvkw.onrender.com/register
 
 A lightweight web app that lets you track your favorite stocks, view up‑to‑date quotes, and set email price alerts. Built with Node.js, Express, EJS templating, and PostgreSQL.
 
