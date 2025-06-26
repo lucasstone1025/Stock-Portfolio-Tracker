@@ -537,31 +537,43 @@ passport.use("local",
 passport.use("google", new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: "http://localhost:3000/auth/google/dashboard",
-  userProfileURL: "http://www.googleapis.com/oauth2/v3/userinfo",
+  callbackURL: process.env.GOOGLE_CALLBACK_URL,
+  userProfileURL: "https://www.googleapis.com/oauth2/v3/userinfo",
 }, async (accessToken, refreshToken, profile, cb) => {
   try {
-    const result = await db.query("SELECT * FROM users WHERE email = $1", 
-      [profile.email]);
+    const email = profile.emails[0].value;
+
+    const result = await db.query(
+      "SELECT * FROM users WHERE email = $1",
+      [email]
+    );
+
     if (result.rows.length === 0) {
-      const newUser = await db.query("INSERT INTO users (email, password_hash, first_name) VALUES ($1, $2, $3)", 
-        [profile.email, "google", profile.given_name]);
-      cb(null, newUser.rows[0]);
+      const insert = await db.query(
+        `INSERT INTO users (email, password_hash, first_name)
+         VALUES ($1, $2, $3) RETURNING *`,
+        [email, "google", profile.name.givenName]
+      );
+      cb(null, insert.rows[0]);
     } else {
-      //user alr exists
       cb(null, result.rows[0]);
     }
-  } catch(err) {
+  } catch (err) {
     cb(err);
   }
-}
-))
+}));
 
 passport.serializeUser((user, cb) => {
-  cb(null, user);
+  cb(null, user.id); // store only the user ID in session
 });
-passport.deserializeUser((user, cb) => {
-  cb(null, user);
+
+passport.deserializeUser(async (id, cb) => {
+  try {
+    const result = await db.query("SELECT * FROM users WHERE id = $1", [id]);
+    cb(null, result.rows[0]);
+  } catch (err) {
+    cb(err);
+  }
 });
 
 
