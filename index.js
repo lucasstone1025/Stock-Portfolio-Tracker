@@ -3,12 +3,15 @@ import bodyParser from "body-parser";
 import pg from "pg";
 import dotenv from "dotenv";
 import session from "express-session";
+import connectPgSimple from 'connect-pg-simple';
 import passport from "passport";
 import { Strategy } from "passport-local";
 import GoogleStrategy from "passport-google-oauth2";
 import bcrypt from "bcrypt";
 import axios from "axios";
 import nodemailer from "nodemailer";
+
+const PgSession = connectPgSimple(session);
 
 dotenv.config();
 
@@ -26,11 +29,9 @@ const API_KEY = process.env.API_KEY;
 //   port : process.env.DB_PORT
 // });
 
-const db = new pg.Client({
+const db = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false, 
-  },
+  ssl: { rejectUnauthorized: false },
 });
 
 const transporter = nodemailer.createTransport({
@@ -45,12 +46,19 @@ db.connect();
 
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static("public"));
+
 app.use(session({
-  secret: process.env.SESSION_SECRET, 
+  store: new PgSession({
+    pool: db, 
+    tableName: "session"
+  }),
+  secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
-    maxAge: 1000 * 60 * 60 
+    secure: true, 
+    sameSite: "lax",
+    maxAge: 1000 * 60 * 60 * 24 // 1 day
   }
 }));
 
