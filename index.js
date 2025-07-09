@@ -184,6 +184,10 @@ app.get("/search", requireLogin, async (req,res) => {
   res.render("search.ejs");
 });
 
+app.get("/help", requireLogin, async (req,res) => {
+  res.render("help.ejs");
+});
+
 app.get("/logout", async (req,res) => {
   req.logout((err) => {
     if(err){

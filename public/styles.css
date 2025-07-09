@@ -5,7 +5,6 @@ body{
     align-items: center;
 
     background-color: #78C0E0;
-
 }
 
 table, th, td {
@@ -114,6 +113,12 @@ img {
     align-items: center;
     flex-direction: column;
     justify-content: center;
+}
+
+@media (max-width: 750px){
+    .result-container {
+        width : 85%;
+    }
 }
 
 .btn-refresh {
