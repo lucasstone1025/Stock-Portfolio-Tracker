@@ -47,6 +47,8 @@ db.connect();
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static("public"));
 
+app.set("trust proxy", 1);
+
 app.use(session({
   store: new PgSession({
     pool: db, 
