@@ -21,6 +21,7 @@ const saltRounds = 10;
 
 const API_KEY = process.env.API_KEY;
 
+//LOCAL
 // const db = new pg.Client({
 //   user : process.env.DB_USER,
 //   host : process.env.DB_HOST,
@@ -29,6 +30,7 @@ const API_KEY = process.env.API_KEY;
 //   port : process.env.DB_PORT
 // });
 
+//PRODUCTION
 const db = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
@@ -47,8 +49,9 @@ db.connect();
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static("public"));
 
-app.set("trust proxy", 1);
 
+//PRODUCTION
+app.set("trust proxy", 1);
 app.use(session({
   store: new PgSession({
     pool: db, 
@@ -64,6 +67,8 @@ app.use(session({
   }
 }));
 
+
+//LOCAL
 // app.use(session({
 //   store: new PgSession({
 //     pool: db,
@@ -479,6 +484,9 @@ app.post("/refresh", async (req,res) => {
       WHERE symbol = $5`,
       [quote.c, quote.h, quote.l, profile.marketCapitalization, symbol]
     );
+
+    //check for alerts
+    await checkAlertsAndNotify();
 
     res.redirect("/watchlist");
   } catch (err) {
