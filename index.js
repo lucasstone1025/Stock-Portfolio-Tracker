@@ -552,7 +552,7 @@ passport.use("google", new GoogleStrategy({
       const insert = await db.query(
         `INSERT INTO users (email, password_hash, first_name)
          VALUES ($1, $2, $3) RETURNING *`,
-        [email, "google", profile.name.givenName]
+        [email, `google_${email}`, profile.name.givenName]
       );
       cb(null, insert.rows[0]);
     } else {
