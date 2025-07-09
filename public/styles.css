@@ -97,6 +97,12 @@ img {
     width : 50%;
 }
 
+@media (max-width: 750px){
+    .stock-container {
+        width : 85%;
+    }
+}
+
 .result-container {
     background-color:#FF6B6B;
     height: 75vh;

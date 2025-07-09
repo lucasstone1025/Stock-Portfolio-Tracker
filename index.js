@@ -64,6 +64,21 @@ app.use(session({
   }
 }));
 
+// app.use(session({
+//   store: new PgSession({
+//     pool: db,
+//     tableName: "session",
+//   }),
+//   secret: process.env.SESSION_SECRET,
+//   resave: false,
+//   saveUninitialized: false,
+//   cookie: {
+//     secure: false,  
+//     sameSite: "lax",
+//     maxAge: 1000 * 60 * 60 * 24
+//   }
+// }));
+
 app.use(passport.initialize());
 app.use(passport.session());
 
