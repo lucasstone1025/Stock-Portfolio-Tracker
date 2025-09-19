@@ -10,6 +10,8 @@ import GoogleStrategy from "passport-google-oauth2";
 import bcrypt from "bcrypt";
 import axios from "axios";
 import nodemailer from "nodemailer";
+import flash from "connect-flash";
+
 
 const PgSession = connectPgSimple(session);
 
@@ -22,19 +24,19 @@ const saltRounds = 10;
 const API_KEY = process.env.API_KEY;
 
 //LOCAL
-// const db = new pg.Client({
-//   user : process.env.DB_USER,
-//   host : process.env.DB_HOST,
-//   database : process.env.DB_NAME,
-//   password : process.env.DB_PASSWORD,
-//   port : process.env.DB_PORT
-// });
-
-//PRODUCTION
-const db = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+const db = new pg.Client({
+  user : process.env.DB_USER,
+  host : process.env.DB_HOST,
+  database : process.env.DB_NAME,
+  password : process.env.DB_PASSWORD,
+  port : process.env.DB_PORT
 });
+
+// //PRODUCTION
+// const db = new pg.Pool({
+//   connectionString: process.env.DATABASE_URL,
+//   ssl: { rejectUnauthorized: false },
+// });
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -48,6 +50,28 @@ db.connect();
 
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static("public"));
+
+app.use(session({
+  store: new (connectPgSimple(session))({
+    conObject: {
+      user: process.env.DB_USER,
+      host: process.env.DB_HOST,
+      database: process.env.DB_NAME,
+      password: process.env.DB_PASSWORD,
+      port: process.env.DB_PORT
+    }
+  }),
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+}));
+
+app.use(flash());
+
+app.use((req, res, next) => {
+  res.locals.error = req.flash('error');
+  next();
+});
 
 
 //PRODUCTION
@@ -323,7 +347,11 @@ app.post("/register", async (req,res) => {
   }
 });
 
-app.post("/login", passport.authenticate("local", { failureRedirect: "/login" }),
+app.post("/login", 
+  passport.authenticate("local", { 
+    failureRedirect: "/login",
+    failureFlash: "Incorrect Username or Password" 
+  }),
   (req, res) => {
     res.redirect("/dashboard");
   }
