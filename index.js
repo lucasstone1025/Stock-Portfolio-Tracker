@@ -11,7 +11,7 @@ import bcrypt from "bcrypt";
 import axios from "axios";
 import nodemailer from "nodemailer";
 import flash from "connect-flash";
-import { zonedTimeToUtc, fromZonedTime } from 'date-fns-tz';
+import { fromZonedTime } from 'date-fns-tz';
 import { isWeekend } from 'date-fns';
 import cron from 'node-cron';
 
@@ -27,16 +27,12 @@ const saltRounds = 10;
 
 const API_KEY = process.env.API_KEY;
 
-// const db = new pg.Client({
-//   user : process.env.DB_USER,
-//   host : process.env.DB_HOST,
-//   database : process.env.DB_NAME,
-//   password : process.env.DB_PASSWORD,
-//   port : process.env.DB_PORT
-// });
-
 const db = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
+  user: process.env.DB_USER,
+  host: process.env.DB_HOST,
+  database: process.env.DB_NAME,
+  password: process.env.DB_PASSWORD,
+  port: process.env.DB_PORT,
 });
 
 db.on('connect', () => {
@@ -55,14 +51,6 @@ const transporter = nodemailer.createTransport({
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static("public"));
 
-app.use(flash());
-
-app.use((req, res, next) => {
-  res.locals.error = req.flash('error');
-  next();
-});
-
-
 app.use(session({
   store: new PgSession({
     pool: db,
@@ -78,6 +66,13 @@ app.use(session({
     maxAge: 1000 * 60 * 60 * 24 // 1 day
   }
 }));
+
+app.use(flash());
+
+app.use((req, res, next) => {
+  res.locals.error = req.flash('error');
+  next();
+});
 
 app.use(passport.initialize());
 app.use(passport.session());
@@ -140,10 +135,6 @@ async function checkAlertsAndNotify() {
     console.log(err);
   }
 }
-
-import { zonedTimeToUtc, fromZonedTime } from 'date-fns-tz';
-import { isWeekend } from 'date-fns';
-import cron from 'node-cron';
 
 // AUTOMATED STOCK REFRESH LOGIC
 
