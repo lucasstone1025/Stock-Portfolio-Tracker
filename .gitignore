@@ -1,4 +1,4 @@
-# Node modules (always ignore this)
+# Node modules
 node_modules/
 
 # Environment variables
