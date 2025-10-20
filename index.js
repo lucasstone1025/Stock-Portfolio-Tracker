@@ -11,7 +11,11 @@ import bcrypt from "bcrypt";
 import axios from "axios";
 import nodemailer from "nodemailer";
 import flash from "connect-flash";
+import { zonedTimeToUtc, fromZonedTime } from 'date-fns-tz';
+import { isWeekend } from 'date-fns';
+import cron from 'node-cron';
 
+const isProduction = process.env.NODE_ENV === 'production';
 
 const PgSession = connectPgSimple(session);
 
@@ -23,20 +27,21 @@ const saltRounds = 10;
 
 const API_KEY = process.env.API_KEY;
 
-//LOCAL
-const db = new pg.Client({
-  user : process.env.DB_USER,
-  host : process.env.DB_HOST,
-  database : process.env.DB_NAME,
-  password : process.env.DB_PASSWORD,
-  port : process.env.DB_PORT
+// const db = new pg.Client({
+//   user : process.env.DB_USER,
+//   host : process.env.DB_HOST,
+//   database : process.env.DB_NAME,
+//   password : process.env.DB_PASSWORD,
+//   port : process.env.DB_PORT
+// });
+
+const db = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
 });
 
-// //PRODUCTION
-// const db = new pg.Pool({
-//   connectionString: process.env.DATABASE_URL,
-//   ssl: { rejectUnauthorized: false },
-// });
+db.on('connect', () => {
+  console.log('Connected to the database');
+});
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -46,25 +51,9 @@ const transporter = nodemailer.createTransport({
   }
 })
 
-db.connect();
 
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static("public"));
-
-app.use(session({
-  store: new (connectPgSimple(session))({
-    conObject: {
-      user: process.env.DB_USER,
-      host: process.env.DB_HOST,
-      database: process.env.DB_NAME,
-      password: process.env.DB_PASSWORD,
-      port: process.env.DB_PORT
-    }
-  }),
-  secret: process.env.SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false,
-}));
 
 app.use(flash());
 
@@ -74,39 +63,21 @@ app.use((req, res, next) => {
 });
 
 
-//PRODUCTION
-app.set("trust proxy", 1);
 app.use(session({
   store: new PgSession({
-    pool: db, 
-    tableName: "session"
+    pool: db,
+    tableName: "session",
   }),
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: true, 
-    sameSite: "lax",
+    // Set 'secure' to true in production, false in development
+    secure: isProduction,
+    sameSite: "lax", // 'lax' is a good default
     maxAge: 1000 * 60 * 60 * 24 // 1 day
   }
 }));
-
-
-//LOCAL
-// app.use(session({
-//   store: new PgSession({
-//     pool: db,
-//     tableName: "session",
-//   }),
-//   secret: process.env.SESSION_SECRET,
-//   resave: false,
-//   saveUninitialized: false,
-//   cookie: {
-//     secure: false,  
-//     sameSite: "lax",
-//     maxAge: 1000 * 60 * 60 * 24
-//   }
-// }));
 
 app.use(passport.initialize());
 app.use(passport.session());
@@ -130,7 +101,7 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
-app.set("view engine", "ejs");
+//---------------------START OF FUNCTION HELPERS--------------------------------
 
 async function checkAlertsAndNotify() {
   try{
@@ -170,6 +141,100 @@ async function checkAlertsAndNotify() {
   }
 }
 
+import { zonedTimeToUtc, fromZonedTime } from 'date-fns-tz';
+import { isWeekend } from 'date-fns';
+import cron from 'node-cron';
+
+// AUTOMATED STOCK REFRESH LOGIC
+
+function isMarketOpen() {
+  const timeZone = 'America/New_York';
+  const now = new Date();
+
+  // find current time and date (EASTERN)
+  const zonedNow = fromZonedTime(now, timeZone);
+
+  // check if weekend
+  if (isWeekend(zonedNow)) {
+    return false;
+  }
+
+  //get current hour and min
+  const hour = zonedNow.getHours();
+  const minute = zonedNow.getMinutes();
+
+  // Check if the time is between 9:30 AM and 4:00 PM.
+  const isAfterOpen = hour > 9 || (hour === 9 && minute >= 30);
+  const isBeforeClose = hour < 16;
+
+  return isAfterOpen && isBeforeClose;
+}
+
+async function refreshAllStockData() {
+  console.log("Checking if market is open for stock refresh...");
+
+  if (!isMarketOpen()) {
+    console.log("Market is closed. Skipping refresh.");
+    return;
+  }
+
+  console.log("Market is open. Starting stock data refresh process.");
+  try {
+    // find what stocks need updating 
+    const { rows: stocksToUpdate } = await db.query(
+      `SELECT DISTINCT symbol FROM stocks`
+    );
+
+    if (stocksToUpdate.length === 0) {
+      console.log("No stocks to refresh.");
+      return;
+    }
+
+    console.log(`Found ${stocksToUpdate.length} unique stocks to update.`);
+
+    // find new data
+    for (const stock of stocksToUpdate) {
+      const symbol = stock.symbol;
+      try {
+        const response = await axios.get("https://finnhub.io/api/v1/quote", {
+          params: { symbol: symbol, token: API_KEY }
+        });
+        const quote = response.data;
+
+        if (quote && quote.c) {
+          // Update the stock's price in the database.
+          await db.query(
+            `UPDATE stocks SET currentprice = $1, dayhigh = $2, daylow = $3, updatedat = CURRENT_TIMESTAMP WHERE symbol = $4`,
+            [quote.c, quote.h, quote.l, symbol]
+          );
+          console.log(`Successfully updated ${symbol} to price ${quote.c}`);
+        } else {
+          console.warn(`No quote data returned for ${symbol}.`);
+        }
+        
+        // delay to be respectful of API rate limits
+        await new Promise(resolve => setTimeout(resolve, 250)); 
+
+      } catch (apiError) {
+        console.error(`Failed to fetch or update data for symbol ${symbol}:`, apiError.message);
+      }
+    }
+
+    // check for alerts now
+    console.log("All stock prices updated. Now checking for alerts.");
+    await checkAlertsAndNotify();
+
+  } catch (err) {
+    console.error("An error occurred during the refreshAllStockData process:", err);
+  }
+}
+
+// schedule job to run every 5 mins 
+// cron syntax: '*/5 * * * *' means "at every 5th minute".
+cron.schedule('*/5 * * * *', refreshAllStockData);
+
+console.log('Automated stock refresh job scheduled to run every 5 minutes.');
+
 function capitalizeFirst(name){
   if(!name) return "";
   return name.charAt(0).toUpperCase() + name.slice(1);
@@ -180,6 +245,16 @@ function requireLogin(req, res, next) {
   if (req.isAuthenticated()) return next();
   res.redirect("/login");
 }
+
+// ------------------ END OF FUNCTION HELPERS ---------------------------------
+
+
+
+app.set("view engine", "ejs");
+
+app.listen(port, () => {
+  console.log(`Server running on port ${port}!`);
+});
 
 app.get("/", async (req,res) => {
   res.redirect("/login");
@@ -198,11 +273,11 @@ app.get("/auth/google", passport.authenticate("google", {
   }
 ));
 
-app.get("/auth/google/dashboard", 
-  passport.authenticate("google", { failureRedirect: "/login" }),
-  (req, res) => {
-    res.redirect("/dashboard");
-  }
+app.get("/auth/google/callback", 
+  passport.authenticate("google", { 
+    successRedirect: "/dashboard",
+    failureRedirect: "/login" 
+  })
 );
 
 app.get("/dashboard", requireLogin, (req,res) => {
@@ -563,9 +638,6 @@ app.post("/deletealert", requireLogin, async (req,res) => {
   }
 });
 
-
-setInterval(checkAlertsAndNotify, 60 * 1000);
-
 passport.use("local",
   new Strategy( { usernameField: "email", passwordField: "password" },
     async function verify(email, password, cb) {
@@ -627,20 +699,6 @@ passport.use("google", new GoogleStrategy({
     cb(err);
   }
 }));
-
-passport.serializeUser((user, cb) => {
-  cb(null, user.id); // store only the user ID in session
-});
-
-passport.deserializeUser(async (id, cb) => {
-  try {
-    const result = await db.query("SELECT * FROM users WHERE id = $1", [id]);
-    cb(null, result.rows[0]);
-  } catch (err) {
-    cb(err);
-  }
-});
-
 
 app.listen(port, () => {
     console.log("Server running!");
