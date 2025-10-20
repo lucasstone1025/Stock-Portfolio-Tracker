@@ -1,5 +1,5 @@
 # TrendTracker
-# LIVE @ https://trendtracker-r7kd.onrender.com/register
+# LIVE @ https://trendtracker.co
 A lightweight web app that lets you track your favorite stocks, view up‑to‑date quotes, and set email price alerts. Built with Node.js, Express, EJS templating, and PostgreSQL.
 
 ## Features
