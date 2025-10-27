@@ -30,9 +30,9 @@
                     <label for="capFilter" class="me-2">Cap:</label>
                     <select name="capFilter" id="capFilter" class="form-select w-auto" onchange="this.form.submit()">
                     <option value=""          <%= !capFilter                   ? 'selected' : '' %>>All Caps</option>
-                    <option value="Small Cap" <%= capFilter==='Small Cap'      ? 'selected' : '' %>>Small Cap - 0-2M</option>
-                    <option value="Mid Cap"   <%= capFilter==='Mid Cap'        ? 'selected' : '' %>>Mid Cap - 2M-100M</option>
-                    <option value="Large Cap" <%= capFilter==='Large Cap'      ? 'selected' : '' %>>Large Cap - 100M and up</option>
+                    <option value="Small Cap" <%= capFilter==='Small Cap'      ? 'selected' : '' %>>Small Cap - 0-2B</option>
+                    <option value="Mid Cap"   <%= capFilter==='Mid Cap'        ? 'selected' : '' %>>Mid Cap - 2B-100B</option>
+                    <option value="Large Cap" <%= capFilter==='Large Cap'      ? 'selected' : '' %>>Large Cap - 100B and up</option>
                     </select>
                 </form>
             </div>
@@ -64,7 +64,7 @@
                                     <td>$<%= stock.currentprice %></td>
                                     <td>
                                         <% if (stock.marketcap) { %>
-                                            <%= (stock.marketcap / 1000).toFixed(1) %>M
+                                            <%= (stock.marketcap / 1000).toFixed(1) %>B
                                         <% } else { %>
                                             N/A
                                         <% } %>
