@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  app:
+    build: .
+    image: trendtracker-app:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "3000:3000"       # host:container (nginx will proxy to host:3000)
+    depends_on:
+      - db
+
+  db:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lucasstone
+      POSTGRES_PASSWORD: Mackenzie1
+      POSTGRES_DB: trendtracker
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
