@@ -47,6 +47,7 @@
                         <thead>
                             <tr>
                                 <th>Symbol</th>
+                                <th>Click Button For More Info</th>
                                 <th>Name</th>
                                 <th>Price</th>
                                 <th>Market Cap</th>
@@ -60,6 +61,11 @@
                             <% stocks.forEach(stock => { %>
                                 <tr>
                                     <td><%= stock.symbol %></td>
+                                    <td>
+                                        <a href="/stock/<%= stock.symbol %>" class="btn btn-dark btn-md">
+                                            Details
+                                        </a>
+                                    </td>
                                     <td><%= stock.companyname %></td>
                                     <td>$<%= stock.currentprice %></td>
                                     <td>

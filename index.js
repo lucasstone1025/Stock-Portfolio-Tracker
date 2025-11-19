@@ -253,6 +253,14 @@ function requireLogin(req, res, next) {
   res.redirect("/login");
 }
 
+function isAuthenticated(req, res, next) {
+  if (req.isAuthenticated()) {
+    return next();
+  } else {
+    res.status(401).send("Unauthorized: Please log in to access this resource.");
+  }
+}
+
 // ------------------ END OF FUNCTION HELPERS ---------------------------------
 
 
@@ -289,6 +297,10 @@ app.get("/auth/google/callback",
 
 app.get("/dashboard", requireLogin, (req,res) => {
   res.render("dashboard", { firstName : capitalizeFirst(req.user.first_name) });
+});
+
+app.get("/findstocks", requireLogin, async (req,res) => {
+  res.render("findstocks.ejs");
 });
 
 app.get("/search", requireLogin, async (req,res) => {
@@ -361,6 +373,7 @@ app.get("/watchlist", requireLogin, async (req, res) => {
 
     const stockCount = stocks.length;
 
+
     res.render("watchlist.ejs", {
       stocks,
       stockCount,
@@ -370,6 +383,45 @@ app.get("/watchlist", requireLogin, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.send("Unable to load watchlist");
+  }
+});
+
+app.get("/stock/:symbol", isAuthenticated, async (req, res) => {
+  try {
+    const symbol = req.params.symbol.toUpperCase();
+
+    const sql = `
+      SELECT 
+        symbol,
+        companyname,
+        marketcap,
+        currentprice,
+        dayhigh,
+        daylow,
+        sector
+      FROM stocks
+      WHERE symbol = $1
+    `;
+
+    const { rows } = await db.query(sql, [symbol]);
+
+    if (rows.length === 0) {
+      return res.status(404).send("Stock not found");
+    }
+
+    const stockDetails = rows[0];  
+
+    // for now just pass ticker to the voew
+    // here is where I make api calls for more data if needed
+    //like const financialData = await getFinancialData(ticker);
+
+    res.render("stockdetails.ejs", { 
+      stock: stockDetails
+      //will pass financialData: financialData etc
+    });
+  } catch (err) {
+    console.error("Error fetching stock details:", err);
+    res.status(500).send("Internal Server Error") 
   }
 });
 

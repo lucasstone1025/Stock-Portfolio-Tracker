@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Details for <%= stock.symbol %></title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-SgOJa3DmI69IUzQ2PVdRZhwQ+dy64/BUtbMJw1MZ8t5HZApcHrRKUc4W0kG879m7" crossorigin="anonymous">
+    <link href="/styles.css" rel="stylesheet" />
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="card">
+            <div class="card-header">
+                <h2>Stock Details: <%= stock.symbol %></h2>
+            </div>
+            <div class="card-body">
+                <p><strong>Symbol:</strong> <%= stock.symbol %></p>
+                <p><strong>Name:</strong> <%= stock.companyname %></p>
+                <p><strong>Price:</strong> $<%= stock.currentprice %></p>
+                <p><strong>Market Cap:</strong>
+                    <% const marketCapNum = Number(stock.marketcap); %>
+                    <% if (marketCapNum < 1000) { %>
+                        <%= (marketCapNum).toFixed(1) %>M
+                    <% } else if (marketCapNum < 1000000) { %>
+                        <%= (marketCapNum / 1000).toFixed(1) %>B
+                    <% } else if (marketCapNum >= 1000000) { %>
+                        <%= (marketCapNum / 1000000).toFixed(1) %>T
+                    <% } else { %>
+                        N/A
+                    <% } %>
+                </p>
+                <p><strong>Day High:</strong> $<%= stock.dayhigh %></p>
+                <p><strong>Day Low:</strong> $<%= stock.daylow %></p>
+                <p><strong>Sector:</strong> <%= stock.sector %></p>
+
+                <div id="chart-container" style="height: 400px; border: 1px solid #ccc; text-align: center; padding-top: 150px;">
+                    <em>Stock chart here... coming soon.</em>
+                </div>
+
+                <div id="financials" class="mt-4">
+                    <em> financial analysis and ML ideas ... coming soon .</em>
+                </div>
+
+                <div id="news" class="mt-4">
+                    <em> latest news ... coming soon .</em>
+                </div>  
+            </div>
+            <div class="card-footer">
+                <a href="/watchlist" class="btn btn-secondary">Back to Watchlist</a> <a href="/dashboard" class="btn btn-secondary">Back to Dashboard</a>
+            </div>
+        </div>
+    </div>
+
+
+
+
+    <%- include('partials/footer.ejs') %>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/js/bootstrap.bundle.min.js" integrity="sha384-k6d4wzSIapyDyv1kpU366/PK5hCdSbCRGRCMv+eplOQJWyd1fbcAu9OCUj5zNLiq" crossorigin="anonymous"></script>
+</body>
+</html>
