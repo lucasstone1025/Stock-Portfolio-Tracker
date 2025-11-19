@@ -19,11 +19,16 @@
             <p><strong>Name:</strong> <%= stock.companyname %> </p>
             <p><strong>Price:</strong> <%= stock.price %></p>
             <p><strong>Market Cap:</strong>
-                                            <% if (stock.marketCap) { %>
-                                                <%= (stock.marketCap / 1000).toFixed(1) %>B
-                                            <% } else { %>
-                                                N/A
-                                            <% } %>
+                                        <% const marketCapNum = Number(stock.marketcap); %>
+                                        <% if (marketCapNum < 1000) { %>
+                                            <%= (marketCapNum).toFixed(1) %>M
+                                        <% } else if (marketCapNum < 1000000) { %>
+                                            <%= (marketCapNum / 1000).toFixed(1) %>B
+                                        <% } else if (marketCapNum >= 1000000) { %>
+                                            <%= (marketCapNum / 1000000).toFixed(1) %>T
+                                        <% } else { %>
+                                            N/A
+                                        <% } %>
             </p>
             <p><strong>Sector:</strong> <%= stock.sector %> </p>
 
@@ -31,7 +36,7 @@
                 <input type="hidden" name="symbol" value="<%= stock.symbol %>" />
                 <input type="hidden" name="companyname" value="<%= stock.companyname %>" />
                 <input type="hidden" name="price" value="<%= stock.price %>" />
-                <input type="hidden" name="marketCap" value="<%= stock.marketCap %>" />
+                <input type="hidden" name="marketcap" value="<%= stock.marketcap %>" />
                 <input type="hidden" name="dayhigh" value="<%= stock.dayhigh %>" />
                 <input type="hidden" name="daylow" value="<%= stock.daylow %>" />
                 <input type="hidden" name="sector" value="<%= stock.sector %>" />

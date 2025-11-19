@@ -1,7 +1,8 @@
+import 'dotenv/config';
+
 import express from "express";
 import bodyParser from "body-parser";
 import pg from "pg";
-import dotenv from "dotenv";
 import session from "express-session";
 import connectPgSimple from 'connect-pg-simple';
 import passport from "passport";
@@ -19,7 +20,6 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 const PgSession = connectPgSimple(session);
 
-dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -79,20 +79,35 @@ app.use(passport.session());
 
 // serializeUser: store only the user ID in the session
 passport.serializeUser((user, done) => {
+
+  if(!user || typeof user.id === 'undefined'){
+    console.error("FATAL: user obj is invalid during serialization:", user);
+    return done(new Error("Invalid user object"));
+  }
+
+
   done(null, user.id);
 });
 
 // deserializeUser: look up the user by ID on each request
 passport.deserializeUser(async (id, done) => {
+
   try {
     const { rows } = await db.query(
       "SELECT id, email, first_name FROM users WHERE id = $1",
       [id]
     );
-    if (!rows[0]) return done(new Error("User not found"));
-    done(null, rows[0]);
+    if (!rows || rows.length === 0) {
+      console.error(`FATAL: No user found with ID: ${id}`);
+      return done(null, false);
+    }
+
+    const user = rows[0];
+    return done(null, user); // success here
+
   } catch (err) {
-    done(err);
+    console.error("FATAL: Database error during deserialization:", err);
+    return done(err);
   }
 });
 
@@ -198,7 +213,6 @@ async function refreshAllStockData() {
             `UPDATE stocks SET currentprice = $1, dayhigh = $2, daylow = $3, updatedat = CURRENT_TIMESTAMP WHERE symbol = $4`,
             [quote.c, quote.h, quote.l, symbol]
           );
-          console.log(`Successfully updated ${symbol} to price ${quote.c}`);
         } else {
           console.warn(`No quote data returned for ${symbol}.`);
         }
@@ -413,7 +427,7 @@ app.post("/register", async (req,res) => {
   }
 });
 
-app.post("/login", 
+app.post("/login",
   passport.authenticate("local", { 
     failureRedirect: "/login",
     failureFlash: "Incorrect Username or Password" 
@@ -460,7 +474,7 @@ app.post("/search", async (req,res) => {
     const stock = {
       symbol: symbol,
       companyname: data2.name,
-      marketCap: data2.marketCapitalization,
+      marketcap: data2.marketCapitalization,
       price: data.c.toFixed(2),
       dayhigh: data.h.toFixed(2),
       daylow: data.l.toFixed(2),
@@ -479,7 +493,7 @@ app.post("/search", async (req,res) => {
 
 app.post("/add", async (req,res) => {
 
-  const { action, symbol, price, dayhigh, daylow, companyname, marketCap, sector } = req.body;
+  const { action, symbol, price, dayhigh, daylow, companyname, marketcap, sector } = req.body;
 
   if(action == "back") {
     return res.redirect("/search");
@@ -502,7 +516,7 @@ app.post("/add", async (req,res) => {
           `INSERT INTO stocks (symbol, currentprice, dayhigh, daylow, companyname, marketcap, sector)
           VALUES ($1, $2, $3, $4, $5, $6, $7)
           RETURNING stockid`,
-          [symbol, price, dayhigh, daylow, companyname, marketCap, sector]
+          [symbol, price, dayhigh, daylow, companyname, marketcap, sector]
         );
         stockId = insert.rows[0].stockid;
       }
@@ -574,7 +588,7 @@ app.post("/refresh", async (req,res) => {
 
     await db.query (
       `UPDATE stocks
-      SET currentprice = $1, dayhigh = $2, daylow = $3, marketCap = $4, updatedat = CURRENT_TIMESTAMP
+      SET currentprice = $1, dayhigh = $2, daylow = $3, marketcap = $4, updatedat = CURRENT_TIMESTAMP
       WHERE symbol = $5`,
       [quote.c, quote.h, quote.l, profile.marketCapitalization, symbol]
     );
@@ -639,24 +653,27 @@ passport.use("local",
 
       if(rows.length === 0) {
         //no user
+        console.log("FAIL: User not found in the database.");
         return cb(null, false, { message: "User not found"});
       }
 
       const user = rows[0];
+
       const storedHashedPassword = user.password_hash;
-      
       bcrypt.compare(password, storedHashedPassword, (err, valid) => {
         if(err) {
           console.error("Error comparing passwords:", err);
           return cb(err);
         } 
         if(!valid){
+          console.log("FAIL: Passwords DO NOT match."); 
           return cb(null, false, { message: "Incorrect password" });
         }
         return cb(null, user);
       });
 
     } catch(err) {
+      console.error("Error during authentication:", err);
       return cb(err);
     }
   })

@@ -63,8 +63,13 @@
                                     <td><%= stock.companyname %></td>
                                     <td>$<%= stock.currentprice %></td>
                                     <td>
-                                        <% if (stock.marketcap) { %>
-                                            <%= (stock.marketcap / 1000).toFixed(1) %>B
+                                        <% const marketCapNum = Number(stock.marketcap); %>
+                                        <% if (marketCapNum < 1000) { %>
+                                            <%= (marketCapNum).toFixed(1) %>M
+                                        <% } else if (marketCapNum < 1000000) { %>
+                                            <%= (marketCapNum / 1000).toFixed(1) %>B
+                                        <% } else if (marketCapNum >= 1000000) { %>
+                                            <%= (marketCapNum / 1000000).toFixed(1) %>T
                                         <% } else { %>
                                             N/A
                                         <% } %>
