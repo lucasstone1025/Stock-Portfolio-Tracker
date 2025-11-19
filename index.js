@@ -22,6 +22,8 @@ const PgSession = connectPgSimple(session);
 
 
 const app = express();
+app.set('trust proxy', 1); // trust proxy fix my problem
+
 const port = process.env.PORT || 3000;
 const saltRounds = 10;
 
