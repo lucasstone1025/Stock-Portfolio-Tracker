@@ -1,6 +1,8 @@
 import 'dotenv/config';
 
 import express from "express";
+import path from "path";
+import fs from "fs";
 import bodyParser from "body-parser";
 import pg from "pg";
 import session from "express-session";
@@ -155,27 +157,25 @@ async function checkAlertsAndNotify() {
 
 // AUTOMATED STOCK REFRESH LOGIC
 
-function isMarketOpen() {
-  const timeZone = 'America/New_York';
-  const now = new Date();
+async function isMarketOpen() {
 
-  // find current time and date (EASTERN)
-  const zonedNow = fromZonedTime(now, timeZone);
-
-  // check if weekend
-  if (isWeekend(zonedNow)) {
+  try {
+    const { data } = await axios.get("https://finnhub.io/api/v1/stock/market-status",
+      {
+        params: { exchange: "US", token: API_KEY }
+      }
+    );
+    const marketOpen = data.marketOpen;
+    if (marketOpen == true) {
+      return true;
+    } else {
+      return false;
+    }
+  } catch (error) {
+    console.error("Error checking market status:", error);
     return false;
   }
 
-  //get current hour and min
-  const hour = zonedNow.getHours();
-  const minute = zonedNow.getMinutes();
-
-  // Check if the time is between 9:30 AM and 4:00 PM.
-  const isAfterOpen = hour > 9 || (hour === 9 && minute >= 30);
-  const isBeforeClose = hour < 16;
-
-  return isAfterOpen && isBeforeClose;
 }
 
 async function refreshAllStockData() {
@@ -266,6 +266,9 @@ function isAuthenticated(req, res, next) {
 
 
 app.set("view engine", "ejs");
+app.set('views', path.join(__dirname, 'views'));
+
+app.use(express.static(path.join(__dirname, 'public')));
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}!`);
@@ -320,6 +323,11 @@ app.get("/logout", async (req,res) => {
     }
   })
 });
+
+// app.get("/chart", (req, res) => {
+//   // read json data from file
+//   const dataPath = path.join(__dirname, 'data', 'chartdata.json');
+// })
 
 app.get("/watchlist", requireLogin, async (req, res) => {
   const userId    = req.user.id;
@@ -616,45 +624,55 @@ app.post("/delete", async (req,res) => {
 });
 
 app.post("/refresh", async (req,res) => {
-  const { symbol } = req.body;
 
-  try {
-    const response = await axios.get("https://finnhub.io/api/v1/quote", {
-      params: {
-        symbol: symbol,
-        token: API_KEY
+  const open = await isMarketOpen();
+  if(open){
+
+    const { symbol } = req.body;
+    console.log(`Manual refresh requested for ${symbol}`);
+    try {
+      const response = await axios.get("https://finnhub.io/api/v1/quote", {
+        params: {
+          symbol: symbol,
+          token: API_KEY
+        }
+      });
+      const quote = response.data;
+
+      const response2 = await axios.get("https://finnhub.io/api/v1/stock/profile2", {
+        params: {
+          symbol: symbol,
+          token: API_KEY
+        }
+      });
+
+      const profile = response2.data
+
+      if(!quote.c) {
+        return res.send("Failed to refresh stock.");
       }
-    });
-    const quote = response.data;
 
-    const response2 = await axios.get("https://finnhub.io/api/v1/stock/profile2", {
-      params: {
-        symbol: symbol,
-        token: API_KEY
-      }
-    });
+      await db.query (
+        `UPDATE stocks
+        SET currentprice = $1, dayhigh = $2, daylow = $3, marketcap = $4, updatedat = CURRENT_TIMESTAMP
+        WHERE symbol = $5`,
+        [quote.c, quote.h, quote.l, profile.marketCapitalization, symbol]
+      );
 
-    const profile = response2.data
+      //check for alerts
+      await checkAlertsAndNotify();
 
-    if(!quote.c) {
-      return res.send("Failed to refresh stock.");
+      res.redirect("/watchlist");
+    } catch (err) {
+      console.log(err);
+      res.send("Unable to refresh stock");
     }
 
-    await db.query (
-      `UPDATE stocks
-      SET currentprice = $1, dayhigh = $2, daylow = $3, marketcap = $4, updatedat = CURRENT_TIMESTAMP
-      WHERE symbol = $5`,
-      [quote.c, quote.h, quote.l, profile.marketCapitalization, symbol]
-    );
-
-    //check for alerts
-    await checkAlertsAndNotify();
-
-    res.redirect("/watchlist");
-  } catch (err) {
-    console.log(err);
-    res.send("Unable to refresh stock");
+  } else {
+    console.log("Market is closed... cannot refresh stock.");
+    return res.redirect("/watchlist");
   }
+
 });
 
 app.post("/setalert", async (req,res) => {

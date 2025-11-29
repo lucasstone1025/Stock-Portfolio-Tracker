@@ -15,4 +15,7 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 core.*
+
+# SQL files
 schema.sql
+backup.sql
