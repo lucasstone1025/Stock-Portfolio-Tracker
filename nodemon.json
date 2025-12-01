@@ -1,0 +1,5 @@
+{
+  "watch": ["*. js", "views/"],
+  "ignore": ["public/data/*"],
+  "ext": "js,ejs"
+}

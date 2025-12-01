@@ -1,6 +1,7 @@
 import yfinance as yf
 import pandas as pd
 import json
+import sys
 
 from pathlib import Path
 
@@ -24,10 +25,17 @@ def get_stock_data(ticker, interval):
     return json_output
 
 if __name__ == "__main__":
-        ticker = "AAPL"
-        interval = "15m"
-        stock_data_json = get_stock_data(ticker, interval)
+        
+        #get ticker from cmd line arguement
 
+        if len(sys.argv) > 2:
+            print("Error no ticker provided")
+            sys.exit(1)
+        
+        ticker = sys.argv[1]
+        interval = "15m"
+
+        stock_data_json = get_stock_data(ticker, interval)
 
         directory = Path(__file__).resolve().parent
 

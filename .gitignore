@@ -19,3 +19,5 @@ core.*
 # SQL files
 schema.sql
 backup.sql
+
+public/data/*.json

@@ -14,9 +14,12 @@ import bcrypt from "bcrypt";
 import axios from "axios";
 import nodemailer from "nodemailer";
 import flash from "connect-flash";
-import { fromZonedTime } from 'date-fns-tz';
-import { isWeekend } from 'date-fns';
 import cron from 'node-cron';
+import { spawn } from 'child_process';
+import { fileURLToPath } from 'url'; 
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -155,8 +158,6 @@ async function checkAlertsAndNotify() {
   }
 }
 
-// AUTOMATED STOCK REFRESH LOGIC
-
 async function isMarketOpen() {
 
   try {
@@ -177,6 +178,8 @@ async function isMarketOpen() {
   }
 
 }
+
+// AUTOMATED STOCK REFRESH LOGIC
 
 async function refreshAllStockData() {
   console.log("Checking if market is open for stock refresh...");
@@ -261,6 +264,33 @@ function isAuthenticated(req, res, next) {
   }
 }
 
+//function to run python scripts
+
+function runPythonScript() {
+  return new Promise((resolve, reject) => {
+   const python = spawn('python', ['scripts/get-json-stock-data.py']);
+
+    let output = '';
+    let errorOutput = '';
+
+    python.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+
+    python.stderr.on('data', (data) => {
+      errorOutput += data.toString();
+    }); 
+
+    python.on('close', (code) => {
+      if (code === 0) {
+        resolve(output);
+      } else {
+        reject(new Error(`Python script exited with code ${code}: ${errorOutput}`));
+      }
+    });
+  });
+}
+
 // ------------------ END OF FUNCTION HELPERS ---------------------------------
 
 
@@ -324,10 +354,23 @@ app.get("/logout", async (req,res) => {
   })
 });
 
-// app.get("/chart", (req, res) => {
-//   // read json data from file
-//   const dataPath = path.join(__dirname, 'data', 'chartdata.json');
-// })
+app.get("/chart", async (req, res) => {
+  // read json data from file
+  try {
+
+    //run python script to get latest data
+    await runPythonScript();
+    
+    const dataPath = path.join(__dirname, 'public', 'data', 'stock_data.json');
+    const stockData = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+
+    res.render('chart', { stockData });
+    
+  } catch (err) {
+    console.error('Error', err);
+    res.status(500).render('error', { message: 'Failed to load chart data.' });
+  }
+});
 
 app.get("/watchlist", requireLogin, async (req, res) => {
   const userId    = req.user.id;
@@ -417,14 +460,22 @@ app.get("/stock/:symbol", isAuthenticated, async (req, res) => {
       return res.status(404).send("Stock not found");
     }
 
-    const stockDetails = rows[0];  
+    const stock = {
+      symbol: rows[0].symbol,
+      companyname: rows[0].companyname,
+      marketcap: rows[0].marketcap,
+      price: parseFloat(rows[0].currentprice).toFixed(2),
+      dayhigh: parseFloat(rows[0].dayhigh).toFixed(2),
+      daylow: parseFloat(rows[0].daylow).toFixed(2),
+      sector: rows[0].sector
+    }
 
     // for now just pass ticker to the voew
     // here is where I make api calls for more data if needed
     //like const financialData = await getFinancialData(ticker);
 
     res.render("stockdetails.ejs", { 
-      stock: stockDetails
+      stock: stock
       //will pass financialData: financialData etc
     });
   } catch (err) {
@@ -433,7 +484,82 @@ app.get("/stock/:symbol", isAuthenticated, async (req, res) => {
   }
 });
 
+app.get("/api/stock/:symbol", isAuthenticated, async (req, res) => {
 
+  const ticker = req.params.symbol.toUpperCase();
+
+  const scriptPath = path.join(__dirname, 'scripts', 'get-json-stock-data.py');
+  
+
+  // Path to python script
+  const pythonPath = '/home/lucas/anaconda3/bin/python';
+  
+  console.log('Script path:', scriptPath);
+  console.log('Python path:', pythonPath);
+  
+  // Check if script exists
+  if (!fs.existsSync(scriptPath)) {
+      console.log('ERROR: Python script not found! ');
+      return res.status(500).json({ error: 'Python script not found' });
+  }
+  
+  let python;
+  try {
+      python = spawn(pythonPath, [scriptPath, ticker]);
+  } catch (err) {
+      console.log('ERROR: Failed to spawn Python:', err);
+      return res.status(500).json({ error: 'Failed to start Python' });
+  }
+  
+  let stdoutData = '';
+  let errorOutput = '';
+  
+  python.stdout.on('data', (data) => {
+      stdoutData += data.toString();
+      console.log('Python stdout:', data.toString());
+  });
+  
+  python.stderr.on('data', (data) => {
+      errorOutput += data.toString();
+      console.log('Python stderr:', data.toString());
+  });
+  
+  // Handle spawn errors
+  python.on('error', (error) => {
+      console.log('Spawn error:', error);
+      return res.status(500).json({ error: `Failed to run Python: ${error.message}` });
+  });
+  
+  python.on('close', (code) => {
+      console.log('Python exited with code:', code);
+      
+      if (code === 0) {
+          const dataPath = path.join(__dirname, 'public', 'data', `${ticker.toLowerCase()}_output.json`);
+          console.log('Looking for JSON at:', dataPath);
+
+          try {
+              const stockData = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+              console.log('Success! Sending data...');
+              res.json(stockData);
+
+              fs.unlink(dataPath, (err) => {
+                  if (err) {
+                      console.log('ERROR deleting JSON file:', err);
+                  } else {
+                      console.log('Temporary JSON file deleted:', dataPath);
+                  }
+              });
+
+          } catch (err) {
+              console.log('ERROR reading JSON:', err);
+              res.status(500).json({ error: `Failed to read stock data for ${ticker}.` });
+          }
+      } else {
+          console.error(`Python script error: ${errorOutput}`);
+          res.status(500).json({ error: `Python script exited with code ${code}: ${errorOutput}` });
+      }
+  });
+});
 app.get("/checkalerts", requireLogin, async (req,res) => {
   await checkAlertsAndNotify();
   res.redirect("/alerts");
