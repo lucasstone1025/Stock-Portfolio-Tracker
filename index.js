@@ -492,7 +492,7 @@ app.get("/api/stock/:symbol", isAuthenticated, async (req, res) => {
   
 
   // Path to python script
-  const pythonPath = '/home/lucas/anaconda3/bin/python';
+  const pythonPath = process.env.PYTHON_PATH || 'python';//path to python in ENV
   
   console.log('Script path:', scriptPath);
   console.log('Python path:', pythonPath);
