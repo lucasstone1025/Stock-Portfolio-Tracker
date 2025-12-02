@@ -488,8 +488,13 @@ app.get("/api/stock/:symbol", isAuthenticated, async (req, res) => {
 
   const ticker = req.params.symbol.toUpperCase();
 
-  const scriptPath = path.join(__dirname, 'scripts', 'get-json-stock-data.py');
-  
+  let scriptPath;
+
+  if (process.env.NODE_ENV == "production") {
+      scriptPath = process.env.SCRIPT_PATH;
+  } else {
+      scriptPath = path.join(__dirname, 'scripts', 'get-json-stock-data.py');
+  }
 
   // Path to python script
   const pythonPath = process.env.PYTHON_PATH || 'python';//path to python in ENV
