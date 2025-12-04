@@ -4,7 +4,7 @@ FROM node:20-alpine
 WORKDIR /usr/src/app
 
 #Install Python and pip
-RUN apk add --no-cache python3 py3-zip
+RUN apk add --no-cache python3 py3-pip
 
 #Install python dependencies
 COPY requirements.txt ./
