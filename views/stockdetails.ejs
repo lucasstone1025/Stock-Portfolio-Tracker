@@ -19,7 +19,7 @@
             <div class="card-body">
                 <p><strong>Symbol:</strong> <%= stock.symbol %></p>
                 <p><strong>Name:</strong> <%= stock.companyname %></p>
-                <p><strong>Price:</strong> $<%= stock.currentprice %></p>
+                <p><strong>Price:</strong> $<%= stock.price %></p>
                 <p><strong>Market Cap:</strong>
                     <% const marketCapNum = Number(stock.marketcap); %>
                     <% if (marketCapNum < 1000) { %>
@@ -36,22 +36,27 @@
                 <p><strong>Day Low:</strong> $<%= stock.daylow %></p>
                 <p><strong>Sector:</strong> <%= stock.sector %></p>
 
-                <div id="chart-container" style="height: 400px; width: 100%; border: 1px solid #ccc; border-radius: 8px; overflow: hidden;">
-                    <div class="d-flex justify-content-center align-items-center h-100">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Loading chart... </span>
-                        </div>
-                        <span class="ms-2">Loading chart... </span>
-                    </div>
+                <!-- Period Selector Buttons -->
+                <div class="btn-group mb-3" role="group" aria-label="Chart period selector">
+                    <button type="button" class="btn btn-outline-primary period-btn" data-period="1h" onclick="loadChart('1h')">1H</button>
+                    <button type="button" class="btn btn-outline-primary period-btn" data-period="1d" onclick="loadChart('1d')">1D</button>
+                    <button type="button" class="btn btn-outline-primary period-btn active" data-period="1w" onclick="loadChart('1w')">1W</button>
+                    <button type="button" class="btn btn-outline-primary period-btn" data-period="1m" onclick="loadChart('1m')">1M</button>
+                    <button type="button" class="btn btn-outline-primary period-btn" data-period="3m" onclick="loadChart('3m')">3M</button>
+                    <button type="button" class="btn btn-outline-primary period-btn" data-period="6m" onclick="loadChart('6m')">6M</button>
                 </div>
 
-                <div id="financials" class="mt-4">
+                <div id="chart-container" style="height: 400px; width: 100%; border: 1px solid #ccc; border-radius: 8px; overflow: hidden;">
+                    <!-- Chart loads here via JavaScript -->
+                </div>
+
+                <!-- <div id="financials" class="mt-4">
                     <em> financial analysis and ML ideas ... coming soon .</em>
                 </div>
 
                 <div id="news" class="mt-4">
                     <em> latest news ... coming soon .</em>
-                </div>  
+                </div>   -->
             </div>
             <div class="card-footer">
                 <a href="/watchlist" class="btn btn-secondary">Back to Watchlist</a> <a href="/dashboard" class="btn btn-secondary">Back to Dashboard</a>
@@ -67,10 +72,20 @@
 
         //get ticker from ejs
         const ticker = "<%= stock.symbol %>";
+        let currentPeriod = '1w'; //default period
 
-        async function loadChart() {
+        async function loadChart(period = '1w') {
             try {
-                const response = await fetch(`/api/stock/${ticker}`);
+                document.getElementById('chart-container').innerHTML = `
+                    <div class="d-flex justify-content-center align-items-center h-100">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading chart... </span>
+                        </div>
+                        <span class="ms-2">Loading chart... </span>
+                    </div>
+                `;
+
+                const response = await fetch(`/api/stock/${ticker}?period=${period}`);
                 
                 if(!response.ok) {
                     throw new Error('Failed to fetch stock data');
@@ -88,6 +103,28 @@
                 const yMin = minPrice - padding;
                 const yMax = maxPrice + padding;
 
+                // Find day boundaries for vertical lines
+                const shapes = [];
+                let lastDate = '';
+                stockData.labels.forEach((label, index) => {
+                    const currentDate = label.split(' ')[0]; // Get just the date part
+                    if (lastDate && currentDate !== lastDate) {
+                        shapes.push({
+                            type: 'line',
+                            x0: index - 0.5,
+                            x1: index - 0.5,
+                            y0: 0,
+                            y1: 1,
+                            yref: 'paper',
+                            line: {
+                                color: 'rgba(0, 0, 0, 0.2)',
+                                width: 1,
+                                dash: 'dash'
+                            }
+                        });
+                    }
+                    lastDate = currentDate;
+                });
 
                 const trace = {
                     x: stockData.labels,
@@ -104,9 +141,19 @@
                     hovertemplate: '<b>%{x}</b><br>Price: $%{y:.2f}<extra></extra>'
                 };
 
+                // period display names
+                const periodNames = {
+                    '1h': '1 Hour',
+                    '1d': '1 Day',
+                    '1w': '1 Week',
+                    '1m': '1 Month',
+                    '3m': '3 Months',
+                    '6m': '6 Months'
+                };
+
                 const layout = {
                     title: {
-                        text: `${ticker} - 7 Day Price`,
+                        text: `${ticker} - ${periodNames[period] || period} Price`,
                         font: { size: 16 }
                     },
                     xaxis: { 
@@ -124,8 +171,9 @@
                         gridcolor: 'rgba(0,0,0,0.05)',
                         tickfont: { size: 10, color: '#888' }
                     },
+                    shapes: shapes, //day seperators
                     hovermode: 'x unified',
-                    margin: { l: 55, r: 20, b: 40, t: 40 },
+                    margin: { l: 60, r: 20, b: 80, t: 40 },
                     height: 380,  // <-- Slightly less than container
                     autosize: true
                 };
@@ -136,6 +184,15 @@
                 };
 
                 Plotly.newPlot('chart-container', [trace], layout, config);
+                currentPeriod = period;
+
+                // update active button state
+                document.querySelectorAll('.period-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                    if(btn.dataset.period === period) {
+                        btn.classList.add('active');
+                    }
+                });
             } catch (error) {
                 document.getElementById('chart-container').innerHTML = `
                     <div class="alert alert-warning d-flex align-items-center justify-content-center h-100" role="alert">

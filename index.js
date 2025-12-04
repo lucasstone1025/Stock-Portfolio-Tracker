@@ -121,6 +121,7 @@ passport.deserializeUser(async (id, done) => {
 //---------------------START OF FUNCTION HELPERS--------------------------------
 
 async function checkAlertsAndNotify() {
+
   try{
     const alertResult = await db.query(
       `SELECT a.id, a.user_id, a.stock_id, a.target_price, a.direction, a.triggered,
@@ -166,7 +167,7 @@ async function isMarketOpen() {
         params: { exchange: "US", token: API_KEY }
       }
     );
-    const marketOpen = data.marketOpen;
+    const marketOpen = data.isOpen;
     if (marketOpen == true) {
       return true;
     } else {
@@ -181,69 +182,108 @@ async function isMarketOpen() {
 
 // AUTOMATED STOCK REFRESH LOGIC
 
+let isRefreshing = false;
+
 async function refreshAllStockData() {
+
+  if (isRefreshing) {
+    console.log("Stock refresh in progress. Skipping alert check.");
+    return;
+  }
+
   console.log("Checking if market is open for stock refresh...");
 
-  if (!isMarketOpen()) {
+  if (! await isMarketOpen()) {
     console.log("Market is closed. Skipping refresh.");
     return;
   }
 
+  isRefreshing = true;
   console.log("Market is open. Starting stock data refresh process.");
+
   try {
     // find what stocks need updating 
     const { rows: stocksToUpdate } = await db.query(
-      `SELECT DISTINCT symbol FROM stocks`
+      `SELECT DISTINCT symbol FROM stocks 
+      WHERE symbol IN (
+        SELECT DISTINCT symbol FROM watchlist
+        UNION
+        SELECT DISTINCT symbol FROM alerts WHERE triggered = false
+      )`
     );
 
     if (stocksToUpdate.length === 0) {
       console.log("No stocks to refresh.");
+      isRefreshing = false;
       return;
     }
 
     console.log(`Found ${stocksToUpdate.length} unique stocks to update.`);
 
-    // find new data
-    for (const stock of stocksToUpdate) {
-      const symbol = stock.symbol;
-      try {
-        const response = await axios.get("https://finnhub.io/api/v1/quote", {
-          params: { symbol: symbol, token: API_KEY }
-        });
-        const quote = response.data;
+    // Process in batches of 25 to stay well under 60/min limit
+    const BATCH_SIZE = 25;
+    const DELAY_BETWEEN_CALLS = 1500; // 1. 5 seconds between each call
+    const DELAY_BETWEEN_BATCHES = 60000; // 60 seconds between batches
 
-        if (quote && quote.c) {
-          // Update the stock's price in the database.
-          await db.query(
-            `UPDATE stocks SET currentprice = $1, dayhigh = $2, daylow = $3, updatedat = CURRENT_TIMESTAMP WHERE symbol = $4`,
-            [quote.c, quote.h, quote.l, symbol]
-          );
-        } else {
-          console.warn(`No quote data returned for ${symbol}.`);
+    for (let i = 0; i < stocksToUpdate.length; i += BATCH_SIZE) {
+      const batch = stocksToUpdate.slice(i, i + BATCH_SIZE);
+      const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+      const totalBatches = Math.ceil(stocksToUpdate.length / BATCH_SIZE);
+
+      console.log(`Processing batch ${batchNum} of ${totalBatches} (${batch.length} stocks)...`);
+
+      for (const stock of batch) {
+        const symbol = stock.symbol;
+        try {
+          const response = await axios.get("https://finnhub.io/api/v1/quote", {
+            params: { symbol: symbol, token: API_KEY }
+          });
+          const quote = response.data;
+
+          if (quote && quote.c) {
+            // Update the stock's price in the database.
+            await db.query(
+              `UPDATE stocks SET currentprice = $1, dayhigh = $2, daylow = $3, updatedat = CURRENT_TIMESTAMP WHERE symbol = $4`,
+              [quote.c, quote.h, quote.l, symbol]
+            );
+            console.log(`Updated ${symbol}: $${quote.c}`);
+          } else {
+            console.warn(`No quote data returned for ${symbol}.`);
+          }
+
+          // delay to be respectful of API rate limits
+          await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_CALLS)); // 1.5 second delay
+        } catch (apiError) {
+          if(apiError.response?.status === 429){
+            console.log(`Rate limit hit while updating ${symbol}. Pausing for 60 seconds.`);
+            await new Promise(resolve => setTimeout(resolve, 60000));
+            i -= 1; //retry this stock 
+          } else {
+            console.error(`Failed to fetch or update data for symbol ${symbol}:`, apiError.message);
+          }
         }
-        
-        // delay to be respectful of API rate limits
-        await new Promise(resolve => setTimeout(resolve, 250)); 
+      }
 
-      } catch (apiError) {
-        console.error(`Failed to fetch or update data for symbol ${symbol}:`, apiError.message);
+      if (i + BATCH_SIZE < stocksToUpdate.length) {
+        console.log(`Batch ${batchNum} complete. Waiting ${DELAY_BETWEEN_BATCHES / 1000} seconds before next batch...`);
+        await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES));
       }
     }
 
-    // check for alerts now
-    console.log("All stock prices updated. Now checking for alerts.");
+    console.log("all stock prices updated. Now checking for alerts.");
     await checkAlertsAndNotify();
-
   } catch (err) {
     console.error("An error occurred during the refreshAllStockData process:", err);
+  } finally {
+    isRefreshing = false;
   }
 }
 
-// schedule job to run every 5 mins 
-// cron syntax: '*/5 * * * *' means "at every 5th minute".
-cron.schedule('*/5 * * * *', refreshAllStockData);
+// schedule job to run every 10 mins 
+// cron syntax: '*/10 * * * *' means "at every 10th minute".
+cron.schedule('*/10 * * * *', refreshAllStockData);
 
-console.log('Automated stock refresh job scheduled to run every 5 minutes.');
+console.log('Automated stock refresh job scheduled to run every 10 minutes.');
 
 function capitalizeFirst(name){
   if(!name) return "";
@@ -361,7 +401,7 @@ app.get("/chart", async (req, res) => {
     //run python script to get latest data
     await runPythonScript();
     
-    const dataPath = path.join(__dirname, 'public', 'data', 'stock_data.json');
+    const dataPath = path.join(__dirname, 'public', 'data', `${ticker.toLowerCase()}_${period}_output.json`);
     const stockData = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
 
     res.render('chart', { stockData });
@@ -487,6 +527,13 @@ app.get("/stock/:symbol", isAuthenticated, async (req, res) => {
 app.get("/api/stock/:symbol", isAuthenticated, async (req, res) => {
 
   const ticker = req.params.symbol.toUpperCase();
+  const period = req.query.period || "1w"; //default to 1 week
+
+  //validate period
+  const validPeriods = ["1h", "1d", "1w", "1m", "3m", "6m"];
+  if (!validPeriods.includes(period)) {
+    return res.status(400).json({ error: "Invalid period" });
+  }
 
   let scriptPath;
 
@@ -501,6 +548,7 @@ app.get("/api/stock/:symbol", isAuthenticated, async (req, res) => {
   
   console.log('Script path:', scriptPath);
   console.log('Python path:', pythonPath);
+  console.log('period:', period);
   
   // Check if script exists
   if (!fs.existsSync(scriptPath)) {
@@ -510,7 +558,7 @@ app.get("/api/stock/:symbol", isAuthenticated, async (req, res) => {
   
   let python;
   try {
-      python = spawn(pythonPath, [scriptPath, ticker]);
+      python = spawn(pythonPath, [scriptPath, ticker, period]);
   } catch (err) {
       console.log('ERROR: Failed to spawn Python:', err);
       return res.status(500).json({ error: 'Failed to start Python' });
@@ -539,7 +587,7 @@ app.get("/api/stock/:symbol", isAuthenticated, async (req, res) => {
       console.log('Python exited with code:', code);
       
       if (code === 0) {
-          const dataPath = path.join(__dirname, 'public', 'data', `${ticker.toLowerCase()}_output.json`);
+          const dataPath = path.join(__dirname, 'public', 'data', `${ticker.toLowerCase()}_${period}_output.json`);
           console.log('Looking for JSON at:', dataPath);
 
           try {
