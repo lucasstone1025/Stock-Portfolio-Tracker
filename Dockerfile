@@ -19,6 +19,9 @@ RUN npm ci --production
 # Copy app files
 COPY . .
 
+# Create the data directory for JSON output
+RUN mkdir -p /usr/src/app/public/data
+
 # Expose port the app listens on (update if different)
 EXPOSE 3000
 
