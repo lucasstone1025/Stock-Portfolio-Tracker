@@ -7,7 +7,7 @@ WORKDIR /usr/src/app
 RUN apk add --no-cache python3 py3-zip
 
 #Install python dependencies
-COPY requirements.txt
+COPY requirements.txt ./
 RUN pip3 install --no-cache-dir -r requirements.txt --break-system-packages
 
 # Copy package files first to leverage docker cache
