@@ -34,16 +34,25 @@ function FindStocks() {
         fetchNews();
     }, []);
 
-    const popularStocks = [
-        { symbol: 'SPY', name: 'S&P 500' },
-        { symbol: 'QQQ', name: 'Nasdaq 100' },
-        { symbol: 'NVDA', name: 'Nvidia' },
-        { symbol: 'AAPL', name: 'Apple' },
-        { symbol: 'TSLA', name: 'Tesla' },
-        { symbol: 'AMD', name: 'AMD' },
-        { symbol: 'MSFT', name: 'Microsoft' },
-        { symbol: 'AMZN', name: 'Amazon' },
-    ];
+    const [marketData, setMarketData] = useState({ trending: [], gainers: [], losers: [] });
+
+    useEffect(() => {
+        const fetchMarketData = async () => {
+            try {
+                const res = await axios.get('/api/market/overview');
+                setMarketData(res.data);
+            } catch (err) {
+                console.error("Failed to fetch market overview:", err);
+            }
+        };
+        fetchMarketData();
+    }, []);
+
+    const formatChange = (change) => {
+        const color = change >= 0 ? 'var(--success)' : 'var(--danger)';
+        const sign = change >= 0 ? '+' : '';
+        return <span style={{ color }}>{sign}{change.toFixed(2)}%</span>;
+    };
 
     return (
         <div style={{ maxWidth: '1200px', margin: '0 auto', paddingBottom: '2rem' }}>
@@ -51,11 +60,11 @@ function FindStocks() {
                 Discover Page
             </h1>
 
-            {/* Popular Stocks Section */}
+            {/* Trending Assets Section */}
             <div style={{ marginBottom: '3rem' }}>
                 <h2 style={{ fontSize: '1.5rem', marginBottom: '1rem', borderLeft: '4px solid var(--primary)', paddingLeft: '1rem' }}>Trending Assets</h2>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '1rem' }}>
-                    {popularStocks.map(stock => (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '1rem' }}>
+                    {marketData.trending.length > 0 ? marketData.trending.map(stock => (
                         <div
                             key={stock.symbol}
                             className="card glass-card"
@@ -77,9 +86,14 @@ function FindStocks() {
                             }}
                         >
                             <div style={{ fontWeight: 'bold', fontSize: '1.2rem', color: 'var(--text-main)' }}>{stock.symbol}</div>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{stock.name}</div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{stock.name}</div>
+                            <div style={{ fontSize: '1rem' }}>${stock.price?.toFixed(2)}</div>
+                            <div style={{ fontSize: '0.9rem' }}>{formatChange(stock.changePercent)}</div>
                         </div>
-                    ))}
+                    )) : (
+                        <div className="text-muted">Loading trending stocks...</div>
+                    )}
+
                     {/* Search "More" Card */}
                     <div
                         className="card glass-card"
@@ -91,7 +105,8 @@ function FindStocks() {
                             border: '1px solid var(--border)',
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'center'
+                            justifyContent: 'center',
+                            minHeight: '130px'
                         }}
                         onClick={() => navigate(`/search`)}
                         onMouseEnter={e => {

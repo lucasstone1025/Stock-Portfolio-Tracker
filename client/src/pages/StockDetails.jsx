@@ -79,6 +79,24 @@ function StockDetails() {
             });
     }, [symbol, period]);
 
+    const addToWatchlist = async () => {
+        try {
+            await axios.post('/api/watchlist/add', {
+                symbol: stock.symbol,
+                companyname: stock.companyname,
+                marketcap: stock.marketcap,
+                price: stock.price,
+                dayhigh: stock.dayhigh,
+                daylow: stock.daylow,
+                sector: stock.sector
+            });
+            alert('Added to watchlist!');
+        } catch (err) {
+            console.error('Error adding to watchlist:', err);
+            alert('Failed to add to watchlist');
+        }
+    };
+
     if (loading) return <div>Loading...</div>;
     if (!stock) return <div>Stock not found</div>;
 
@@ -98,13 +116,20 @@ function StockDetails() {
                             <div>High: ${stock.dayhigh}</div>
                             <div>Low: ${stock.daylow}</div>
                         </div>
-                        <button
-                            className="btn btn-primary"
-                            style={{ marginTop: '1rem' }}
-                            onClick={() => setShowAlertModal(true)}
-                        >
-                            Set Alert
-                        </button>
+                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '1rem' }}>
+                            <button
+                                className="btn btn-success"
+                                onClick={addToWatchlist}
+                            >
+                                Add to Watchlist
+                            </button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={() => setShowAlertModal(true)}
+                            >
+                                Set Alert
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -2,6 +2,7 @@ import 'dotenv/config';
 
 import express from "express";
 import path from "path";
+import { fileURLToPath } from "url";
 import fs from "fs";
 import bodyParser from "body-parser";
 import pg from "pg";
@@ -16,27 +17,12 @@ import nodemailer from "nodemailer";
 import flash from "connect-flash";
 import cron from 'node-cron';
 import { spawn } from 'child_process';
-import { fileURLToPath } from 'url';
 import cors from 'cors';
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const yahooFinanceModule = require('yahoo-finance2');
-// In many CJS/ESM interops, we might need .default
-const YahooFinanceClass = yahooFinanceModule.YahooFinance || yahooFinanceModule.default || yahooFinanceModule;
+import _YahooFinance from 'yahoo-finance2';
+const yahooFinance = new _YahooFinance({ suppressNotices: ['yahooSurvey'] });
+console.log('YahooFinance instance keys:', Object.keys(yahooFinance));
 
-let yahooFinance;
-try {
-  yahooFinance = new YahooFinanceClass();
-} catch (e) {
-  // If it's not a constructor, maybe it's the instance already?
-  yahooFinance = YahooFinanceClass;
-}
-
-console.log('YahooFinance initialized via require. Type:', typeof yahooFinance);
-
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -857,24 +843,57 @@ app.get("/api/watchlist", isAuthenticated, async (req, res) => {
 app.get("/api/stock/:symbol", isAuthenticated, async (req, res) => {
   try {
     const symbol = req.params.symbol.toUpperCase();
+
+    // 1. Try DB first
     const sql = `
       SELECT symbol, companyname, marketcap, currentprice, dayhigh, daylow, sector
       FROM stocks WHERE symbol = $1
     `;
     const { rows } = await db.query(sql, [symbol]);
 
-    if (rows.length === 0) {
+    if (rows.length > 0) {
+      console.log(`[StockDetails] Found ${symbol} in DB`);
+      const stock = {
+        symbol: rows[0].symbol,
+        companyname: rows[0].companyname,
+        marketcap: rows[0].marketcap,
+        price: parseFloat(rows[0].currentprice).toFixed(2),
+        dayhigh: parseFloat(rows[0].dayhigh).toFixed(2),
+        daylow: parseFloat(rows[0].daylow).toFixed(2),
+        sector: rows[0].sector
+      };
+      return res.json(stock);
+    }
+
+    // 2. Fallback to API
+    console.log(`[StockDetails] ${symbol} not in DB, fetching from Finnhub...`);
+    const response = await axios.get("https://finnhub.io/api/v1/quote", {
+      params: { symbol: symbol, token: API_KEY }
+    });
+    const data = response.data;
+
+    if (data.c === 0 && data.d === null && data.dp === null) {
       return res.status(404).json({ error: "Stock not found" });
     }
 
+    let data2 = {};
+    try {
+      const response2 = await axios.get("https://finnhub.io/api/v1/stock/profile2", {
+        params: { symbol: symbol, token: API_KEY }
+      });
+      data2 = response2.data;
+    } catch (err) {
+      console.log(`Profile not found for ${symbol}, using defaults.`);
+    }
+
     const stock = {
-      symbol: rows[0].symbol,
-      companyname: rows[0].companyname,
-      marketcap: rows[0].marketcap,
-      price: parseFloat(rows[0].currentprice).toFixed(2),
-      dayhigh: parseFloat(rows[0].dayhigh).toFixed(2),
-      daylow: parseFloat(rows[0].daylow).toFixed(2),
-      sector: rows[0].sector
+      symbol: symbol,
+      companyname: data2.name || symbol,
+      marketcap: data2.marketCapitalization || 0,
+      price: data.c.toFixed(2),
+      dayhigh: data.h.toFixed(2),
+      daylow: data.l.toFixed(2),
+      sector: data2.finnhubIndustry || 'N/A'
     };
     res.json(stock);
   } catch (err) {
@@ -959,8 +978,12 @@ app.get("/api/search", isAuthenticated, async (req, res) => {
       params: { symbol: symbol.toUpperCase(), token: API_KEY }
     });
     const data = response.data;
+    console.log(`[Search] Symbol: ${symbol}, Quote Data:`, data);
 
-    if (!data.c) {
+    // Some ETFs might return 0 if market is closed/pre-market? 
+    // Or if symbol is invalid, Finnhub returns c: 0.
+    if (data.c === 0 && data.d === null && data.dp === null) {
+      console.log(`[Search] Invalid symbol ${symbol} (all nulls/zeros)`);
       return res.status(404).json({ error: "No stock found with that symbol." });
     }
 
@@ -995,6 +1018,7 @@ app.get("/api/search", isAuthenticated, async (req, res) => {
 app.post("/api/watchlist/add", isAuthenticated, async (req, res) => {
   const { symbol, price, dayhigh, daylow, companyname, marketcap, sector } = req.body;
   const userId = req.user.id;
+  console.log(`[WatchlistAdd] Request to add ${symbol} for user ${userId}. MarketCap: ${marketcap}, Sector: ${sector}`);
 
   try {
     let result = await db.query("SELECT * FROM stocks WHERE symbol = $1", [symbol]);
@@ -1002,7 +1026,9 @@ app.post("/api/watchlist/add", isAuthenticated, async (req, res) => {
 
     if (result.rows.length !== 0) {
       stockId = result.rows[0].stockid;
+      console.log(`[WatchlistAdd] Stock ${symbol} already exists (ID: ${stockId})`);
     } else {
+      console.log(`[WatchlistAdd] Inserting new stock ${symbol}...`);
       const insert = await db.query(
         `INSERT INTO stocks (symbol, currentprice, dayhigh, daylow, companyname, marketcap, sector)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -1010,6 +1036,7 @@ app.post("/api/watchlist/add", isAuthenticated, async (req, res) => {
         [symbol, price, dayhigh, daylow, companyname, marketcap, sector]
       );
       stockId = insert.rows[0].stockid;
+      console.log(`[WatchlistAdd] Created new stock ${symbol} (ID: ${stockId})`);
     }
 
     await db.query(
@@ -1018,9 +1045,10 @@ app.post("/api/watchlist/add", isAuthenticated, async (req, res) => {
       ON CONFLICT DO NOTHING`,
       [userId, stockId]
     );
+    console.log(`[WatchlistAdd] Added ${symbol} to watchlist`);
     res.json({ message: "Added to watchlist" });
   } catch (err) {
-    console.error(err);
+    console.error(`[WatchlistAdd] Error adding ${symbol}:`, err);
     res.status(500).json({ error: "Failed to add to watchlist" });
   }
 });
@@ -1433,6 +1461,61 @@ passport.use("google", new GoogleStrategy({
     cb(err);
   }
 }));
+
+// Market Overview Endpoint
+app.get("/api/market/overview", isAuthenticated, async (req, res) => {
+  try {
+    // 1. Get Trending Symbols from Yahoo Finance
+    const trendingResult = await yahooFinance.trendingSymbols('US');
+
+    // Filter out crypto and other non-stock types
+    // Fetch more initially (20) to ensure we have enough after filtering
+    const allTrending = trendingResult.quotes.slice(0, 20);
+    const trendingSymbolsCandidate = allTrending.map(q => q.symbol);
+
+    const detailedQuotes = await yahooFinance.quote(trendingSymbolsCandidate);
+
+    const validQuotes = detailedQuotes.filter(q =>
+      (q.quoteType === 'EQUITY' || q.quoteType === 'ETF') && q.marketCap > 0
+    );
+
+    const quotes = validQuotes.slice(0, 10); // Take top 10 valid ones
+
+    // 3. Format trending data
+    const trending = quotes.map(q => ({
+      symbol: q.symbol,
+      name: q.shortName || q.longName || q.symbol,
+      price: q.regularMarketPrice,
+      change: q.regularMarketChange,
+      changePercent: q.regularMarketChangePercent
+    }));
+
+    // 4. Get Top Gainers and Losers directly from API
+    // dailyGainers/dailyLosers are deprecated, use screener instead
+    const gainersResult = await yahooFinance.screener({ scrIds: 'day_gainers', count: 5 });
+    const losersResult = await yahooFinance.screener({ scrIds: 'day_losers', count: 5 });
+
+    const formatMover = (q) => ({
+      symbol: q.symbol,
+      name: q.shortName || q.longName || q.symbol,
+      price: q.regularMarketPrice,
+      change: q.regularMarketChange,
+      changePercent: q.regularMarketChangePercent
+    });
+
+    const gainers = gainersResult.quotes.map(formatMover);
+    const losers = losersResult.quotes.map(formatMover);
+
+    res.json({
+      trending,
+      gainers,
+      losers
+    });
+  } catch (err) {
+    console.error("Error fetching market overview:", err);
+    res.status(500).json({ error: "Failed to fetch market data" });
+  }
+});
 
 // Serve React App in production
 if (process.env.NODE_ENV === 'production') {
