@@ -1,5 +1,17 @@
 {
-  "watch": ["*. js", "views/"],
-  "ignore": ["public/data/*"],
-  "ext": "js,ejs"
+  "watch": [
+    "index.js",
+    "routes/",
+    "controllers/",
+    "models/",
+    "views/"
+  ],
+  "ignore": [
+    "public/data/*",
+    "venv/*",
+    "node_modules/*",
+    "client/*",
+    ".git/*"
+  ],
+  "ext": "js,ejs,json"
 }

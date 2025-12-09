@@ -24,7 +24,8 @@ def get_stock_data(ticker, period='1w'):
     df = yf.download(
             tickers=ticker,
             period=yf_period,
-            interval=yf_interval)
+            interval=yf_interval,
+            auto_adjust=True)
 
     if df.empty:
         return json.dumps({'labels': [], 'data': []})

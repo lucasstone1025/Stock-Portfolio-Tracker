@@ -16,7 +16,24 @@ import nodemailer from "nodemailer";
 import flash from "connect-flash";
 import cron from 'node-cron';
 import { spawn } from 'child_process';
-import { fileURLToPath } from 'url'; 
+import { fileURLToPath } from 'url';
+import cors from 'cors';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const yahooFinanceModule = require('yahoo-finance2');
+// In many CJS/ESM interops, we might need .default
+const YahooFinanceClass = yahooFinanceModule.YahooFinance || yahooFinanceModule.default || yahooFinanceModule;
+
+let yahooFinance;
+try {
+  yahooFinance = new YahooFinanceClass();
+} catch (e) {
+  // If it's not a constructor, maybe it's the instance already?
+  yahooFinance = YahooFinanceClass;
+}
+
+console.log('YahooFinance initialized via require. Type:', typeof yahooFinance);
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,7 +73,12 @@ const transporter = nodemailer.createTransport({
 
 
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.json());
 app.use(express.static("public"));
+app.use(cors({
+  origin: "http://localhost:5173", // Vite default port
+  credentials: true
+}));
 
 app.use(session({
   store: new PgSession({
@@ -87,7 +109,7 @@ app.use(passport.session());
 // serializeUser: store only the user ID in the session
 passport.serializeUser((user, done) => {
 
-  if(!user || typeof user.id === 'undefined'){
+  if (!user || typeof user.id === 'undefined') {
     console.error("FATAL: user obj is invalid during serialization:", user);
     return done(new Error("Invalid user object"));
   }
@@ -122,7 +144,7 @@ passport.deserializeUser(async (id, done) => {
 
 async function checkAlertsAndNotify() {
 
-  try{
+  try {
     const alertResult = await db.query(
       `SELECT a.id, a.user_id, a.stock_id, a.target_price, a.direction, a.triggered,
       u.email, s.symbol, s.currentprice
@@ -132,16 +154,16 @@ async function checkAlertsAndNotify() {
       WHERE a.triggered = FALSE`
     );
 
-    for(const alert of alertResult.rows) {
+    for (const alert of alertResult.rows) {
       const current = parseFloat(alert.currentprice);
       const target = parseFloat(alert.target_price);
       const direction = alert.direction;
 
-      const shouldTrigger = 
-      (direction === "up" && current >= target) ||
-      (direction === "down" && current <= target);
-      
-      if(shouldTrigger) {
+      const shouldTrigger =
+        (direction === "up" && current >= target) ||
+        (direction === "down" && current <= target);
+
+      if (shouldTrigger) {
         await transporter.sendMail({
           from: '"Stock Watcher" lucasstone49@gmail.com',
           to: alert.email,
@@ -154,7 +176,7 @@ async function checkAlertsAndNotify() {
         console.log(`Alert triggered and email sent for ${alert.symbol} (${direction} $${target})`);
       }
     }
-  } catch(err) {
+  } catch (err) {
     console.log(err);
   }
 }
@@ -254,7 +276,7 @@ async function refreshAllStockData() {
           // delay to be respectful of API rate limits
           await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_CALLS)); // 1.5 second delay
         } catch (apiError) {
-          if(apiError.response?.status === 429){
+          if (apiError.response?.status === 429) {
             console.log(`Rate limit hit while updating ${symbol}. Pausing for 60 seconds.`);
             await new Promise(resolve => setTimeout(resolve, 60000));
             i -= 1; //retry this stock 
@@ -285,8 +307,8 @@ cron.schedule('*/10 * * * *', refreshAllStockData);
 
 console.log('Automated stock refresh job scheduled to run every 10 minutes.');
 
-function capitalizeFirst(name){
-  if(!name) return "";
+function capitalizeFirst(name) {
+  if (!name) return "";
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
@@ -308,7 +330,7 @@ function isAuthenticated(req, res, next) {
 
 function runPythonScript() {
   return new Promise((resolve, reject) => {
-   const python = spawn('python', ['scripts/get-json-stock-data.py']);
+    const python = spawn('python', ['scripts/get-json-stock-data.py']);
 
     let output = '';
     let errorOutput = '';
@@ -319,7 +341,7 @@ function runPythonScript() {
 
     python.stderr.on('data', (data) => {
       errorOutput += data.toString();
-    }); 
+    });
 
     python.on('close', (code) => {
       if (code === 0) {
@@ -344,49 +366,49 @@ app.listen(port, () => {
   console.log(`Server running on port ${port}!`);
 });
 
-app.get("/", async (req,res) => {
+app.get("/", async (req, res) => {
   res.redirect("/login");
 });
 
-app.get("/login", async (req,res) => {
+app.get("/login", async (req, res) => {
   res.render("login.ejs");
 });
 
-app.get("/register", async (req,res) => {
+app.get("/register", async (req, res) => {
   res.render("register.ejs");
 });
 
 app.get("/auth/google", passport.authenticate("google", {
   scope: ["profile", "email"],
-  }
+}
 ));
 
-app.get("/auth/google/callback", 
-  passport.authenticate("google", { 
+app.get("/auth/google/callback",
+  passport.authenticate("google", {
     successRedirect: "/dashboard",
-    failureRedirect: "/login" 
+    failureRedirect: "/login"
   })
 );
 
-app.get("/dashboard", requireLogin, (req,res) => {
-  res.render("dashboard", { firstName : capitalizeFirst(req.user.first_name) });
+app.get("/dashboard", requireLogin, (req, res) => {
+  res.render("dashboard", { firstName: capitalizeFirst(req.user.first_name) });
 });
 
-app.get("/findstocks", requireLogin, async (req,res) => {
+app.get("/findstocks", requireLogin, async (req, res) => {
   res.render("findstocks.ejs");
 });
 
-app.get("/search", requireLogin, async (req,res) => {
+app.get("/search", requireLogin, async (req, res) => {
   res.render("search.ejs");
 });
 
-app.get("/help", requireLogin, async (req,res) => {
+app.get("/help", requireLogin, async (req, res) => {
   res.render("help.ejs");
 });
 
-app.get("/logout", async (req,res) => {
+app.get("/logout", async (req, res) => {
   req.logout((err) => {
-    if(err){
+    if (err) {
       console.log(err);
     } else {
       res.redirect("/");
@@ -400,12 +422,12 @@ app.get("/chart", async (req, res) => {
 
     //run python script to get latest data
     await runPythonScript();
-    
+
     const dataPath = path.join(__dirname, 'public', 'data', `${ticker.toLowerCase()}_${period}_output.json`);
     const stockData = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
 
     res.render('chart', { stockData });
-    
+
   } catch (err) {
     console.error('Error', err);
     res.status(500).render('error', { message: 'Failed to load chart data.' });
@@ -413,8 +435,8 @@ app.get("/chart", async (req, res) => {
 });
 
 app.get("/watchlist", requireLogin, async (req, res) => {
-  const userId    = req.user.id;
-  const filter    = req.query.filter    || "def";
+  const userId = req.user.id;
+  const filter = req.query.filter || "def";
   const capFilter = req.query.capFilter || null;
 
   // build ORDER BY once
@@ -514,17 +536,17 @@ app.get("/stock/:symbol", isAuthenticated, async (req, res) => {
     // here is where I make api calls for more data if needed
     //like const financialData = await getFinancialData(ticker);
 
-    res.render("stockdetails.ejs", { 
+    res.render("stockdetails.ejs", {
       stock: stock
       //will pass financialData: financialData etc
     });
   } catch (err) {
     console.error("Error fetching stock details:", err);
-    res.status(500).send("Internal Server Error") 
+    res.status(500).send("Internal Server Error")
   }
 });
 
-app.get("/api/stock/:symbol", isAuthenticated, async (req, res) => {
+app.get("/api/chart/:symbol", isAuthenticated, async (req, res) => {
 
   const ticker = req.params.symbol.toUpperCase();
   const period = req.query.period || "1w"; //default to 1 week
@@ -538,87 +560,90 @@ app.get("/api/stock/:symbol", isAuthenticated, async (req, res) => {
   let scriptPath;
 
   if (process.env.NODE_ENV == "production") {
-      scriptPath = process.env.SCRIPT_PATH;
+    scriptPath = process.env.SCRIPT_PATH;
   } else {
-      scriptPath = path.join(__dirname, 'scripts', 'get-json-stock-data.py');
+    scriptPath = path.join(__dirname, 'scripts', 'get-json-stock-data.py');
   }
 
   // Path to python script
-  const pythonPath = process.env.PYTHON_PATH || 'python';//path to python in ENV
-  
+  const pythonPath = process.env.PYTHON_PATH || 'python3';//path to python in ENV
+
   console.log('Script path:', scriptPath);
   console.log('Python path:', pythonPath);
   console.log('period:', period);
-  
+
   // Check if script exists
   if (!fs.existsSync(scriptPath)) {
-      console.log('ERROR: Python script not found! ');
-      return res.status(500).json({ error: 'Python script not found' });
+    console.log('ERROR: Python script not found! ');
+    return res.status(500).json({ error: 'Python script not found' });
   }
-  
+
   let python;
   try {
-      python = spawn(pythonPath, [scriptPath, ticker, period]);
+    python = spawn(pythonPath, [scriptPath, ticker, period]);
   } catch (err) {
-      console.log('ERROR: Failed to spawn Python:', err);
-      return res.status(500).json({ error: 'Failed to start Python' });
+    console.log('ERROR: Failed to spawn Python:', err);
+    return res.status(500).json({ error: 'Failed to start Python' });
   }
-  
+
   let stdoutData = '';
   let errorOutput = '';
-  
+
   python.stdout.on('data', (data) => {
-      stdoutData += data.toString();
-      console.log('Python stdout:', data.toString());
+    stdoutData += data.toString();
+    console.log('Python stdout:', data.toString());
   });
-  
+
   python.stderr.on('data', (data) => {
-      errorOutput += data.toString();
-      console.log('Python stderr:', data.toString());
+    errorOutput += data.toString();
+    console.log('Python stderr:', data.toString());
   });
-  
+
   // Handle spawn errors
   python.on('error', (error) => {
-      console.log('Spawn error:', error);
+    console.log('Spawn error:', error);
+    if (!res.headersSent) {
       return res.status(500).json({ error: `Failed to run Python: ${error.message}` });
+    }
   });
-  
+
   python.on('close', (code) => {
-      console.log('Python exited with code:', code);
-      
-      if (code === 0) {
-          const dataPath = path.join(__dirname, 'public', 'data', `${ticker.toLowerCase()}_${period}_output.json`);
-          console.log('Looking for JSON at:', dataPath);
+    console.log('Python exited with code:', code);
+    if (res.headersSent) return;
 
-          try {
-              const stockData = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
-              console.log('Success! Sending data...');
-              res.json(stockData);
+    if (code === 0) {
+      const dataPath = path.join(__dirname, 'public', 'data', `${ticker.toLowerCase()}_${period}_output.json`);
+      console.log('Looking for JSON at:', dataPath);
 
-              fs.unlink(dataPath, (err) => {
-                  if (err) {
-                      console.log('ERROR deleting JSON file:', err);
-                  } else {
-                      console.log('Temporary JSON file deleted:', dataPath);
-                  }
-              });
+      try {
+        const stockData = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+        console.log('Success! Sending data...');
+        res.json(stockData);
 
-          } catch (err) {
-              console.log('ERROR reading JSON:', err);
-              res.status(500).json({ error: `Failed to read stock data for ${ticker}.` });
+        fs.unlink(dataPath, (err) => {
+          if (err) {
+            console.log('ERROR deleting JSON file:', err);
+          } else {
+            console.log('Temporary JSON file deleted:', dataPath);
           }
-      } else {
-          console.error(`Python script error: ${errorOutput}`);
-          res.status(500).json({ error: `Python script exited with code ${code}: ${errorOutput}` });
+        });
+
+      } catch (err) {
+        console.log('ERROR reading JSON:', err);
+        if (!res.headersSent) res.status(500).json({ error: `Failed to read stock data for ${ticker}.` });
       }
+    } else {
+      console.error(`Python script error: ${errorOutput}`);
+      if (!res.headersSent) res.status(500).json({ error: `Python script exited with code ${code}: ${errorOutput}` });
+    }
   });
 });
-app.get("/checkalerts", requireLogin, async (req,res) => {
+app.get("/checkalerts", requireLogin, async (req, res) => {
   await checkAlertsAndNotify();
   res.redirect("/alerts");
 });
 
-app.get("/alerts", requireLogin, async (req,res) => {
+app.get("/alerts", requireLogin, async (req, res) => {
   try {
     const userId = req.user.id;
 
@@ -630,7 +655,7 @@ app.get("/alerts", requireLogin, async (req,res) => {
       ORDER BY a.triggered ASC, s.symbol ASC`,
       [userId]
     );
-    
+
     const alerts = result.rows;
     res.render("alerts", { alerts });
   } catch (err) {
@@ -639,8 +664,310 @@ app.get("/alerts", requireLogin, async (req,res) => {
   }
 });
 
+// API ROUTES
 
-app.post("/register", async (req,res) => {
+app.get("/api/user", (req, res) => {
+  if (req.isAuthenticated()) {
+    res.json({ isAuthenticated: true, user: { id: req.user.id, email: req.user.email, first_name: req.user.first_name } });
+  } else {
+    res.json({ isAuthenticated: false });
+  }
+});
+
+app.post("/api/login", (req, res, next) => {
+  passport.authenticate("local", (err, user, info) => {
+    if (err) return next(err);
+    if (!user) return res.status(401).json({ error: "Invalid email or password" });
+    req.login(user, (err) => {
+      if (err) return next(err);
+      return res.json({ message: "Logged in successfully", user: { id: user.id, email: user.email, first_name: user.first_name } });
+    });
+  })(req, res, next);
+});
+
+app.post("/api/register", async (req, res) => {
+  const { email, password, first_name } = req.body;
+  try {
+    const checkResult = await db.query("SELECT * FROM users WHERE email = $1", [email]);
+    if (checkResult.rows.length > 0) {
+      return res.status(400).json({ error: "Email already registered" });
+    }
+    const hash = await bcrypt.hash(password, saltRounds);
+    const result = await db.query(
+      "INSERT INTO users (email, password_hash, first_name) VALUES ($1, $2, $3) RETURNING id, email, first_name",
+      [email, hash, first_name]
+    );
+    const user = result.rows[0];
+    req.login(user, (err) => {
+      if (err) return res.status(500).json({ error: "Login failed after registration" });
+      return res.json({ message: "Registered and logged in", user });
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+app.post("/api/logout", (req, res) => {
+  req.logout((err) => {
+    if (err) return res.status(500).json({ error: "Logout failed" });
+    res.json({ message: "Logged out successfully" });
+  });
+});
+
+app.get("/api/dashboard", isAuthenticated, (req, res) => {
+  res.json({ firstName: capitalizeFirst(req.user.first_name) });
+});
+
+app.get("/api/watchlist", isAuthenticated, async (req, res) => {
+  const userId = req.user.id;
+  const filter = req.query.filter || "def";
+  const capFilter = req.query.capFilter || null;
+
+  let orderClause = "";
+  if (filter === "alpha") {
+    orderClause = "ORDER BY s.symbol";
+  } else if (filter === "asc") {
+    orderClause = "ORDER BY s.marketcap";
+  } else if (filter === "desc") {
+    orderClause = "ORDER BY s.marketcap DESC";
+  }
+
+  const sql = `
+  SELECT
+    s.symbol,
+    s.companyname,
+    s.marketcap,
+    s.currentprice,
+    s.dayhigh,
+    s.daylow,
+    s.sector
+  FROM watchlist w
+  JOIN stocks s ON w.stock_id = s.stockid
+  WHERE w.user_id = $1
+  GROUP BY
+    s.symbol, s.companyname, s.marketcap,
+    s.currentprice, s.dayhigh, s.daylow, s.sector,
+    CASE
+      WHEN s.marketcap <    2000  THEN 'Small Cap'
+      WHEN s.marketcap <=  10000  THEN 'Mid Cap'
+      ELSE                            'Large Cap'
+    END
+  HAVING
+    ($2::text) IS NULL
+    OR CASE
+         WHEN s.marketcap <    2000  THEN 'Small Cap'
+         WHEN s.marketcap <=  10000  THEN 'Mid Cap'
+         ELSE                            'Large Cap'
+       END = $2::text
+  ${orderClause};
+  `;
+
+  try {
+    const { rows: stocks } = await db.query(sql, [userId, capFilter]);
+    res.json({ stocks, filter, capFilter });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Unable to load watchlist" });
+  }
+});
+
+app.get("/api/stock/:symbol", isAuthenticated, async (req, res) => {
+  try {
+    const symbol = req.params.symbol.toUpperCase();
+    const sql = `
+      SELECT symbol, companyname, marketcap, currentprice, dayhigh, daylow, sector
+      FROM stocks WHERE symbol = $1
+    `;
+    const { rows } = await db.query(sql, [symbol]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "Stock not found" });
+    }
+
+    const stock = {
+      symbol: rows[0].symbol,
+      companyname: rows[0].companyname,
+      marketcap: rows[0].marketcap,
+      price: parseFloat(rows[0].currentprice).toFixed(2),
+      dayhigh: parseFloat(rows[0].dayhigh).toFixed(2),
+      daylow: parseFloat(rows[0].daylow).toFixed(2),
+      sector: rows[0].sector
+    };
+    res.json(stock);
+  } catch (err) {
+    console.error("Error fetching stock details:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+app.get("/api/news", isAuthenticated, async (req, res) => {
+  try {
+    const result = await yahooFinance.search("financial news", { newsCount: 20 });
+
+    // Transform Yahoo Finance results to match the structure expected by the frontend (FinnHub format)
+    const news = result.news.map(item => {
+      // Determine if time is ms or s
+      let timeInSeconds = item.providerPublishTime;
+      if (timeInSeconds > 9999999999) {
+        timeInSeconds = Math.floor(timeInSeconds / 1000);
+      }
+
+      return {
+        id: item.uuid,
+        headline: item.title,
+        url: item.link,
+        // Yahoo search doesn't always provide a text summary, providing a fallback or empty string
+        summary: item.type === "VIDEO" ? "Video content" : "Click to read full article...",
+        source: item.publisher,
+        datetime: timeInSeconds,
+        image: item.thumbnail?.resolutions?.[0]?.url || null,
+        category: "General"
+      };
+    });
+
+    res.json(news);
+  } catch (err) {
+    console.error("Error fetching news:", err);
+    res.status(500).json({ error: "Failed to fetch news" });
+  }
+});
+
+app.get("/api/search", isAuthenticated, async (req, res) => {
+  const symbol = req.query.symbol;
+  if (!symbol) return res.status(400).json({ error: "Symbol is required" });
+
+  try {
+    const response = await axios.get("https://finnhub.io/api/v1/quote", {
+      params: { symbol: symbol.toUpperCase(), token: API_KEY }
+    });
+    const data = response.data;
+
+    if (!data.c) {
+      return res.status(404).json({ error: "No stock found with that symbol." });
+    }
+
+    const response2 = await axios.get("https://finnhub.io/api/v1/stock/profile2", {
+      params: { symbol: symbol.toUpperCase(), token: API_KEY }
+    });
+    const data2 = response2.data;
+
+    if (!data2.name) {
+      return res.status(404).json({ error: "No stock profile found." });
+    }
+
+    const stock = {
+      symbol: symbol.toUpperCase(),
+      companyname: data2.name,
+      marketcap: data2.marketCapitalization,
+      price: data.c.toFixed(2),
+      dayhigh: data.h.toFixed(2),
+      daylow: data.l.toFixed(2),
+      sector: data2.finnhubIndustry
+    };
+    res.json({ stock });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Search failed" });
+  }
+});
+
+app.post("/api/watchlist/add", isAuthenticated, async (req, res) => {
+  const { symbol, price, dayhigh, daylow, companyname, marketcap, sector } = req.body;
+  const userId = req.user.id;
+
+  try {
+    let result = await db.query("SELECT * FROM stocks WHERE symbol = $1", [symbol]);
+    let stockId;
+
+    if (result.rows.length !== 0) {
+      stockId = result.rows[0].stockid;
+    } else {
+      const insert = await db.query(
+        `INSERT INTO stocks (symbol, currentprice, dayhigh, daylow, companyname, marketcap, sector)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING stockid`,
+        [symbol, price, dayhigh, daylow, companyname, marketcap, sector]
+      );
+      stockId = insert.rows[0].stockid;
+    }
+
+    await db.query(
+      `INSERT INTO watchlist (user_id, stock_id)
+      VALUES ($1, $2)
+      ON CONFLICT DO NOTHING`,
+      [userId, stockId]
+    );
+    res.json({ message: "Added to watchlist" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to add to watchlist" });
+  }
+});
+
+app.post("/api/alerts/create", isAuthenticated, async (req, res) => {
+  const { symbol, direction, target_price } = req.body;
+  const userId = req.user.id;
+
+  if (!symbol || !direction || !target_price) return res.status(400).json({ error: "Missing fields" });
+
+  try {
+    const stockResult = await db.query("SELECT stockid FROM stocks WHERE symbol = $1", [symbol]);
+
+    if (stockResult.rows.length > 0) {
+      const stockId = stockResult.rows[0].stockid;
+      await db.query(
+        `INSERT INTO alerts (user_id, stock_id, target_price, direction)
+        VALUES ($1, $2, $3, $4)`,
+        [userId, stockId, target_price, direction]
+      );
+      res.json({ message: "Alert created successfully" });
+    } else {
+      res.status(404).json({ error: "Stock not found" });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to create alert" });
+  }
+});
+
+app.post("/api/alerts/delete", isAuthenticated, async (req, res) => {
+  const { alert_id } = req.body;
+
+  try {
+    const result = await db.query("DELETE FROM alerts WHERE id = $1 AND user_id = $2 RETURNING id",
+      [alert_id, req.user.id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: "Alert not found or unauthorized" });
+
+    res.json({ message: "Alert deleted successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete alert" });
+  }
+});
+
+
+app.post("/api/watchlist/delete", isAuthenticated, async (req, res) => {
+  const { symbol } = req.body;
+  const userId = req.user.id;
+
+  try {
+    const stockResult = await db.query("SELECT stockid FROM stocks WHERE symbol = $1", [symbol]);
+    if (stockResult.rows.length > 0) {
+      const stockId = stockResult.rows[0].stockid;
+      await db.query("DELETE FROM watchlist WHERE user_id = $1 AND stock_id = $2", [userId, stockId]);
+    }
+    res.json({ message: "Removed from watchlist" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to remove from watchlist" });
+  }
+});
+
+
+
+app.post("/register", async (req, res) => {
   const { email, password, first_name } = req.body;
 
   try {
@@ -648,7 +975,7 @@ app.post("/register", async (req,res) => {
       [email]
     );
 
-    if(checkResult.rows.length > 0) {
+    if (checkResult.rows.length > 0) {
       return res.redirect("/login");
     }
     const hash = await bcrypt.hash(password, saltRounds);
@@ -659,57 +986,57 @@ app.post("/register", async (req,res) => {
     const user = result.rows[0];
 
     req.login(user, (err) => {
-      if (err) {console.log(err);}
+      if (err) { console.log(err); }
       return res.redirect("/dashboard");
     });
-    
-  } catch(err) {
+
+  } catch (err) {
     console.log(err);
   }
 });
 
 app.post("/login",
-  passport.authenticate("local", { 
+  passport.authenticate("local", {
     failureRedirect: "/login",
-    failureFlash: "Incorrect Username or Password" 
+    failureFlash: "Incorrect Username or Password"
   }),
   (req, res) => {
     res.redirect("/dashboard");
   }
 );
 
-app.post("/search", async (req,res) => {
+app.post("/search", async (req, res) => {
   const symbol = req.body.symbol.toUpperCase();
   const { action } = req.body;
 
-  if(action == "back"){
+  if (action == "back") {
     return res.redirect("/dashboard");
   }
 
   try {
     const response = await axios.get("https://finnhub.io/api/v1/quote", {
       params: {
-        symbol : symbol,
+        symbol: symbol,
         token: API_KEY
       }
     });
     const data = response.data
 
-    if(!data.c){
-      return res.render("searchresult.ejs", {error: "No stock found with that symbol.", stock: null});
+    if (!data.c) {
+      return res.render("searchresult.ejs", { error: "No stock found with that symbol.", stock: null });
     };
 
     const response2 = await axios.get("https://finnhub.io/api/v1/stock/profile2", {
       params: {
-        symbol : symbol,
-        token : API_KEY
+        symbol: symbol,
+        token: API_KEY
       }
     });
 
     const data2 = response2.data;
 
-    if(!data2.name){
-      return res.render("searchresult.ejs", {error: "No stock found with that symbol...", stock: null});
+    if (!data2.name) {
+      return res.render("searchresult.ejs", { error: "No stock found with that symbol...", stock: null });
     }
 
     const stock = {
@@ -722,27 +1049,27 @@ app.post("/search", async (req,res) => {
       sector: data2.finnhubIndustry
     };
 
-    
+
 
 
     res.render("searchresult.ejs", { error: null, stock });
-  } catch(err) {
+  } catch (err) {
     console.log(err);
-    res.render("searchresult.ejs", { error: "Something went wrong. try again.", stock: null});
+    res.render("searchresult.ejs", { error: "Something went wrong. try again.", stock: null });
   }
 });
 
-app.post("/add", async (req,res) => {
+app.post("/add", async (req, res) => {
 
   const { action, symbol, price, dayhigh, daylow, companyname, marketcap, sector } = req.body;
 
-  if(action == "back") {
+  if (action == "back") {
     return res.redirect("/search");
   }
-  
+
   const userId = req.user.id;
 
-  if(action == "add"){
+  if (action == "add") {
     try {
       //check if stock exists in watchlist
       let result = await db.query("SELECT * FROM stocks WHERE symbol = $1",
@@ -750,7 +1077,7 @@ app.post("/add", async (req,res) => {
       );
       let stockId;
 
-      if(result.rows.length !== 0) {
+      if (result.rows.length !== 0) {
         stockId = result.rows[0].stockid;
       } else {
         const insert = await db.query(
@@ -770,7 +1097,7 @@ app.post("/add", async (req,res) => {
         [userId, stockId]
       );
       res.redirect("/watchlist");
-    } catch(err) {
+    } catch (err) {
       console.log(err);
       res.send("Failed to add to watchlist");
     }
@@ -779,7 +1106,7 @@ app.post("/add", async (req,res) => {
 
 });
 
-app.post("/delete", async (req,res) => {
+app.post("/delete", async (req, res) => {
   const { symbol } = req.body;
   const userId = req.user.id;
 
@@ -788,10 +1115,10 @@ app.post("/delete", async (req,res) => {
       [symbol]
     );
 
-    if(stockResult.rows.length > 0) {
+    if (stockResult.rows.length > 0) {
       const stockId = stockResult.rows[0].stockid;
 
-      await db.query("DELETE FROM watchlist WHERE user_id = $1 AND stock_id = $2", 
+      await db.query("DELETE FROM watchlist WHERE user_id = $1 AND stock_id = $2",
         [userId, stockId]
       );
     }
@@ -802,10 +1129,10 @@ app.post("/delete", async (req,res) => {
   }
 });
 
-app.post("/refresh", async (req,res) => {
+app.post("/refresh", async (req, res) => {
 
   const open = await isMarketOpen();
-  if(open){
+  if (open) {
 
     const { symbol } = req.body;
     console.log(`Manual refresh requested for ${symbol}`);
@@ -827,11 +1154,11 @@ app.post("/refresh", async (req,res) => {
 
       const profile = response2.data
 
-      if(!quote.c) {
+      if (!quote.c) {
         return res.send("Failed to refresh stock.");
       }
 
-      await db.query (
+      await db.query(
         `UPDATE stocks
         SET currentprice = $1, dayhigh = $2, daylow = $3, marketcap = $4, updatedat = CURRENT_TIMESTAMP
         WHERE symbol = $5`,
@@ -854,7 +1181,7 @@ app.post("/refresh", async (req,res) => {
 
 });
 
-app.post("/setalert", async (req,res) => {
+app.post("/setalert", async (req, res) => {
   const { symbol, direction, target_price } = req.body;
   const userId = req.user.id;
 
@@ -863,7 +1190,7 @@ app.post("/setalert", async (req,res) => {
       [symbol]
     );
 
-    if(stockResult.rows.length > 0) {
+    if (stockResult.rows.length > 0) {
       const stockId = stockResult.rows[0].stockid;
 
       await db.query(
@@ -874,17 +1201,17 @@ app.post("/setalert", async (req,res) => {
     }
 
     res.redirect("/watchlist");
-  } catch(err) {
+  } catch (err) {
     console.log(err);
     res.send("Unable to get alert");
   }
 });
 
-app.post("/deletealert", requireLogin, async (req,res) => {
+app.post("/deletealert", requireLogin, async (req, res) => {
   const { alert_id } = req.body;
 
-  try{
-    await db.query("DELETE FROM alerts WHERE id = $1 AND user_id = $2", 
+  try {
+    await db.query("DELETE FROM alerts WHERE id = $1 AND user_id = $2",
       [alert_id, req.user.id]
     );
     res.redirect("/alerts");
@@ -895,39 +1222,39 @@ app.post("/deletealert", requireLogin, async (req,res) => {
 });
 
 passport.use("local",
-  new Strategy( { usernameField: "email", passwordField: "password" },
+  new Strategy({ usernameField: "email", passwordField: "password" },
     async function verify(email, password, cb) {
-    try {
-      const { rows } = await db.query("SELECT * FROM users WHERE email = $1",
-        [email]
-      );
+      try {
+        const { rows } = await db.query("SELECT * FROM users WHERE email = $1",
+          [email]
+        );
 
-      if(rows.length === 0) {
-        //no user
-        console.log("FAIL: User not found in the database.");
-        return cb(null, false, { message: "User not found"});
-      }
-
-      const user = rows[0];
-
-      const storedHashedPassword = user.password_hash;
-      bcrypt.compare(password, storedHashedPassword, (err, valid) => {
-        if(err) {
-          console.error("Error comparing passwords:", err);
-          return cb(err);
-        } 
-        if(!valid){
-          console.log("FAIL: Passwords DO NOT match."); 
-          return cb(null, false, { message: "Incorrect password" });
+        if (rows.length === 0) {
+          //no user
+          console.log("FAIL: User not found in the database.");
+          return cb(null, false, { message: "User not found" });
         }
-        return cb(null, user);
-      });
 
-    } catch(err) {
-      console.error("Error during authentication:", err);
-      return cb(err);
-    }
-  })
+        const user = rows[0];
+
+        const storedHashedPassword = user.password_hash;
+        bcrypt.compare(password, storedHashedPassword, (err, valid) => {
+          if (err) {
+            console.error("Error comparing passwords:", err);
+            return cb(err);
+          }
+          if (!valid) {
+            console.log("FAIL: Passwords DO NOT match.");
+            return cb(null, false, { message: "Incorrect password" });
+          }
+          return cb(null, user);
+        });
+
+      } catch (err) {
+        console.error("Error during authentication:", err);
+        return cb(err);
+      }
+    })
 );
 
 passport.use("google", new GoogleStrategy({
@@ -960,5 +1287,5 @@ passport.use("google", new GoogleStrategy({
 }));
 
 app.listen(port, () => {
-    console.log("Server running!");
-  });
+  console.log("Server running!");
+});
