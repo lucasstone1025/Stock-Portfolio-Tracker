@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { formatMarketCap } from '../utils/formatters';
 
 function Search() {
     const [symbol, setSymbol] = useState('');
@@ -82,7 +83,7 @@ function Search() {
                         </div>
                         <div>
                             <div className="text-muted" style={{ fontSize: '0.8rem' }}>Market Cap</div>
-                            <div style={{ fontSize: '1.1rem' }}>${(result.marketcap / 1000).toFixed(2)}B</div>
+                            <div style={{ fontSize: '1.1rem' }}>{formatMarketCap(result.marketcap)}</div>
                         </div>
                     </div>
 

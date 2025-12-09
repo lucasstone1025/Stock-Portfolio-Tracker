@@ -6,6 +6,7 @@ function Register() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [firstName, setFirstName] = useState('');
+    const [phone, setPhone] = useState('');
     const [error, setError] = useState('');
     const { register } = useAuth();
     const navigate = useNavigate();
@@ -13,7 +14,7 @@ function Register() {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
-        const res = await register(email, password, firstName);
+        const res = await register(email, password, firstName, phone);
         if (res.success) {
             navigate('/dashboard');
         } else {
@@ -46,6 +47,17 @@ function Register() {
                             onChange={(e) => setEmail(e.target.value)}
                             required
                         />
+                    </div>
+                    <div className="input-group">
+                        <label className="input-label">Phone Number (Optional)</label>
+                        <input
+                            type="tel"
+                            className="input-field"
+                            placeholder="+1234567890"
+                            value={phone}
+                            onChange={(e) => setPhone(e.target.value)}
+                        />
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Required for Text Alerts</span>
                     </div>
                     <div className="input-group">
                         <label className="input-label">Password</label>

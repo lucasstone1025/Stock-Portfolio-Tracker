@@ -4,6 +4,7 @@ import axios from 'axios';
 function CreateAlertModal({ symbol, onClose, currentPrice }) {
     const [targetPrice, setTargetPrice] = useState(currentPrice);
     const [direction, setDirection] = useState('up');
+    const [alertMethod, setAlertMethod] = useState('email');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
@@ -16,7 +17,8 @@ function CreateAlertModal({ symbol, onClose, currentPrice }) {
             await axios.post('/api/alerts/create', {
                 symbol,
                 target_price: targetPrice,
-                direction
+                direction,
+                alert_method: alertMethod
             });
             onClose(true); // Success
         } catch (err) {
@@ -46,6 +48,45 @@ function CreateAlertModal({ symbol, onClose, currentPrice }) {
                             onChange={(e) => setTargetPrice(e.target.value)}
                             required
                         />
+                    </div>
+
+                    <div className="input-group">
+                        <label className="input-label">Notification Method</label>
+                        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                                <input
+                                    type="radio"
+                                    name="alertMethod"
+                                    value="email"
+                                    checked={alertMethod === 'email'}
+                                    onChange={(e) => setAlertMethod(e.target.value)}
+                                    style={{ marginRight: '0.5rem' }}
+                                />
+                                Email
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                                <input
+                                    type="radio"
+                                    name="alertMethod"
+                                    value="sms"
+                                    checked={alertMethod === 'sms'}
+                                    onChange={(e) => setAlertMethod(e.target.value)}
+                                    style={{ marginRight: '0.5rem' }}
+                                />
+                                Text
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                                <input
+                                    type="radio"
+                                    name="alertMethod"
+                                    value="both"
+                                    checked={alertMethod === 'both'}
+                                    onChange={(e) => setAlertMethod(e.target.value)}
+                                    style={{ marginRight: '0.5rem' }}
+                                />
+                                Both
+                            </label>
+                        </div>
                     </div>
 
                     <div className="input-group">

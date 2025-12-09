@@ -23,7 +23,7 @@ function Login() {
     return (
         <div style={{ maxWidth: '400px', margin: '4rem auto' }}>
             <div className="card glass-card">
-                <h2 className="text-center" style={{ marginBottom: '1.5rem', color: 'var(--primary)' }}>Login to StockWatch</h2>
+                <h2 className="text-center" style={{ marginBottom: '1.5rem', color: 'var(--primary)' }}>Login to TrendTracker</h2>
                 {error && <div className="text-danger text-center" style={{ marginBottom: '1rem' }}>{error}</div>}
                 <form onSubmit={handleSubmit}>
                     <div className="input-group">
@@ -48,6 +48,17 @@ function Login() {
                     </div>
                     <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>Login</button>
                 </form>
+
+                <div style={{ margin: '1.5rem 0', display: 'flex', alignItems: 'center' }}>
+                    <div style={{ flex: 1, height: '1px', background: 'var(--border)' }}></div>
+                    <span style={{ padding: '0 0.5rem', color: 'var(--text-muted)' }}>OR</span>
+                    <div style={{ flex: 1, height: '1px', background: 'var(--border)' }}></div>
+                </div>
+
+                <a href="http://localhost:3000/auth/google" className="btn btn-outline" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                    <img src="/google-logo.svg" alt="Google" style={{ width: '20px', height: '20px' }} />
+                    Sign in with Google
+                </a>
                 <p className="text-center text-muted" style={{ marginTop: '1rem' }}>
                     Don't have an account? <Link to="/register" style={{ color: 'var(--primary)' }}>Register</Link>
                 </p>

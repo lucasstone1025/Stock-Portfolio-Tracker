@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Watchlist from './pages/Watchlist';
+import Alerts from './pages/Alerts';
 import StockDetails from './pages/StockDetails';
 import Search from './pages/Search';
 import FindStocks from './pages/FindStocks';
@@ -40,6 +41,7 @@ function App() {
             <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
             <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
             <Route path="/watchlist" element={<PrivateRoute><Watchlist /></PrivateRoute>} />
+            <Route path="/alerts" element={<PrivateRoute><Alerts /></PrivateRoute>} />
             <Route path="/search" element={<PrivateRoute><Search /></PrivateRoute>} />
             <Route path="/find-stocks" element={<PrivateRoute><FindStocks /></PrivateRoute>} />
             <Route path="/stock/:symbol" element={<PrivateRoute><StockDetails /></PrivateRoute>} />

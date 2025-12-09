@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
+import CreateAlertModal from '../components/CreateAlertModal';
+import { formatMarketCap } from '../utils/formatters';
 
 function Watchlist() {
     const [watchlist, setWatchlist] = useState({ stocks: [], filter: 'def', capFilter: null });
+    const [alertStock, setAlertStock] = useState(null);
     const [loading, setLoading] = useState(true);
 
     const fetchWatchlist = (filter = 'def', capFilter = null) => {
@@ -64,8 +67,8 @@ function Watchlist() {
                     {watchlist.stocks.map(stock => (
                         <div key={stock.symbol} className="card glass-card">
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                                <Link to={`/stock/${stock.symbol}`} style={{ fontWeight: 'bold', fontSize: '1.25rem', color: 'var(--primary)' }}>
-                                    {stock.symbol}
+                                <Link to={`/stock/${stock.symbol}`} style={{ fontWeight: 'bold', fontSize: '1.25rem', color: 'var(--primary)', textDecoration: 'underline', cursor: 'pointer' }} title="View Details">
+                                    {stock.symbol} ↗
                                 </Link>
                                 <span className="text-muted">{stock.sector}</span>
                             </div>
@@ -75,13 +78,30 @@ function Watchlist() {
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                                 <div>
                                     <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>${stock.currentprice}</div>
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Mkt Cap: ${(stock.marketcap / 1000).toFixed(2)}B</div>
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Mkt Cap: {formatMarketCap(stock.marketcap)}</div>
                                 </div>
-                                <button onClick={() => handleRemove(stock.symbol)} className="btn btn-danger" style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}>Remove</button>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-end' }}>
+                                    <button
+                                        onClick={() => setAlertStock(stock)}
+                                        className="btn btn-outline"
+                                        style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}
+                                    >
+                                        Set Alert
+                                    </button>
+                                    <button onClick={() => handleRemove(stock.symbol)} className="btn btn-danger" style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}>Remove</button>
+                                </div>
                             </div>
                         </div>
                     ))}
                 </div>
+            )}
+
+            {alertStock && (
+                <CreateAlertModal
+                    symbol={alertStock.symbol}
+                    currentPrice={alertStock.currentprice}
+                    onClose={() => setAlertStock(null)}
+                />
             )}
         </div>
     );

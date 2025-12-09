@@ -1,10 +1,10 @@
 services:
   app:
-    build: .
+    build: ./server
     image: trendtracker-app:latest
     restart: unless-stopped
     env_file:
-      - .env
+      - ./server/.env
     ports:
       - "3000:3000"       # host:container (nginx will proxy to host:3000)
     depends_on:

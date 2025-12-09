@@ -48,7 +48,7 @@ function FindStocks() {
     return (
         <div style={{ maxWidth: '1200px', margin: '0 auto', paddingBottom: '2rem' }}>
             <h1 className="text-center" style={{ marginBottom: '2rem', fontSize: '2.5rem', background: 'linear-gradient(to right, #3b82f6, #10b981)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                Market Pulse
+                Discover Page
             </h1>
 
             {/* Popular Stocks Section */}

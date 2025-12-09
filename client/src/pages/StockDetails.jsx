@@ -13,6 +13,9 @@ function StockDetails() {
     const [chartLoading, setChartLoading] = useState(true);
     const [showAlertModal, setShowAlertModal] = useState(false);
 
+    const [news, setNews] = useState([]);
+    const [newsLoading, setNewsLoading] = useState(true);
+
     useEffect(() => {
         // Fetch Stock Details
         axios.get(`/api/stock/${symbol}`)
@@ -23,6 +26,18 @@ function StockDetails() {
             .catch(err => {
                 console.error(err);
                 setLoading(false);
+            });
+
+        // Fetch News
+        setNewsLoading(true);
+        axios.get(`/api/news/${symbol}`)
+            .then(res => {
+                setNews(res.data);
+                setNewsLoading(false);
+            })
+            .catch(err => {
+                console.error("Error fetching news:", err);
+                setNewsLoading(false);
             });
     }, [symbol]);
 
@@ -102,7 +117,7 @@ function StockDetails() {
                 />
             )}
 
-            <div className="card glass-card">
+            <div className="card glass-card" style={{ marginBottom: '2rem' }}>
                 <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem', justifyContent: 'flex-end' }}>
                     {['1d', '1w', '1m', '3m', '6m'].map(p => (
                         <button
@@ -136,6 +151,32 @@ function StockDetails() {
                     )}
                 </div>
             </div>
+
+            <h2 style={{ marginBottom: '1rem' }}>Latest News</h2>
+            {newsLoading ? (
+                <div>Loading News...</div>
+            ) : news.length === 0 ? (
+                <div className="text-muted">No news found for this stock.</div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3" style={{ gap: '1.5rem' }}>
+                    {news.map(item => (
+                        <a href={item.url} target="_blank" rel="noopener noreferrer" key={item.id} style={{ textDecoration: 'none', color: 'inherit' }}>
+                            <div className="card hover-card" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                                {item.image && (
+                                    <div style={{ height: '150px', overflow: 'hidden', borderRadius: '8px 8px 0 0', marginBottom: '1rem' }}>
+                                        <img src={item.image} alt={item.headline} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    </div>
+                                )}
+                                <div style={{ flex: 1 }}>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 'bold' }}>{item.source}</span>
+                                    <h3 style={{ fontSize: '1.1rem', margin: '0.5rem 0' }}>{item.headline}</h3>
+                                    <p className="text-muted" style={{ fontSize: '0.9rem' }}>{new Date(item.datetime * 1000).toLocaleDateString()}</p>
+                                </div>
+                            </div>
+                        </a>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }

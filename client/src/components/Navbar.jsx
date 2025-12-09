@@ -10,11 +10,12 @@ function Navbar() {
     return (
         <nav className="navbar">
             <div className="container nav-content">
-                <Link to="/" className="nav-logo">StockWatch</Link>
+                <Link to="/" className="nav-logo">TrendTracker</Link>
                 <div className="nav-links">
                     <Link to="/dashboard" className={`nav-link ${isActive('/dashboard')}`}>Dashboard</Link>
                     <Link to="/watchlist" className={`nav-link ${isActive('/watchlist')}`}>Watchlist</Link>
-                    <Link to="/find-stocks" className={`nav-link ${isActive('/find-stocks')}`}>Find Stocks</Link>
+                    <Link to="/find-stocks" className={`nav-link ${isActive('/find-stocks')}`}>Discover</Link>
+                    <Link to="/alerts" className={`nav-link ${isActive('/alerts')}`}>Alerts</Link>
                     <button onClick={logout} className="nav-link" style={{ background: 'none' }}>Logout</button>
                 </div>
             </div>
