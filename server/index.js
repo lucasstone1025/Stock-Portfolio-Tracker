@@ -30,7 +30,7 @@ const PgSession = connectPgSimple(session);
 
 
 const app = express();
-app.set('trust proxy', 1); // trust proxy fix my problem
+app.set('trust proxy', 1); // trust proxy fix my problem!!
 
 const port = process.env.PORT || 3000;
 const saltRounds = 10;
@@ -416,17 +416,7 @@ app.listen(port, () => {
   console.log(`Server running on port ${port}!`);
 });
 
-// app.get("/", async (req, res) => {
-//   res.redirect("/login");
-// });
 
-// app.get("/login", async (req, res) => {
-//   res.render("login.ejs");
-// });
-
-// app.get("/register", async (req, res) => {
-//   res.render("register.ejs");
-// });
 
 app.get("/auth/google", passport.authenticate("google", {
   scope: ["profile", "email"],
@@ -443,161 +433,13 @@ app.get("/auth/google/callback",
   }
 );
 
-// app.get("/dashboard", requireLogin, (req, res) => {
-//   res.render("dashboard", { firstName: capitalizeFirst(req.user.first_name) });
-// });
-
-// app.get("/findstocks", requireLogin, async (req, res) => {
-//   res.render("findstocks.ejs");
-// });
-
-// app.get("/search", requireLogin, async (req, res) => {
-//   res.render("search.ejs");
-// });
-
-// app.get("/help", requireLogin, async (req, res) => {
-//   res.render("help.ejs");
-// });
-
-// app.get("/logout", async (req, res) => {
-//   req.logout((err) => {
-//     if (err) {
-//       console.log(err);
-//     } else {
-//       res.redirect("/");
-//     }
-//   })
-// });
-
-// app.get("/chart", async (req, res) => {
-//   // read json data from file
-//   try {
-
-//     //run python script to get latest data
-//     await runPythonScript();
-
-//     const dataPath = path.join(__dirname, 'public', 'data', `${ticker.toLowerCase()}_${period}_output.json`);
-//     const stockData = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
-
-//     res.render('chart', { stockData });
-
-//   } catch (err) {
-//     console.error('Error', err);
-//     res.status(500).render('error', { message: 'Failed to load chart data.' });
-//   }
-// });
-
-// app.get("/watchlist", requireLogin, async (req, res) => {
-//   const userId = req.user.id;
-//   const filter = req.query.filter || "def";
-//   const capFilter = req.query.capFilter || null;
-
-//   // build ORDER BY once
-//   let orderClause = "";
-//   if (filter === "alpha") {
-//     orderClause = "ORDER BY s.symbol";
-//   } else if (filter === "asc") {
-//     orderClause = "ORDER BY s.marketcap";
-//   } else if (filter === "desc") {
-//     orderClause = "ORDER BY s.marketcap DESC";
-//   }
-
-//   const sql = `
-//   SELECT
-//     s.symbol,
-//     s.companyname,
-//     s.marketcap,
-//     s.currentprice,
-//     s.dayhigh,
-//     s.daylow,
-//     s.sector
-//   FROM watchlist w
-//   JOIN stocks s ON w.stock_id = s.stockid
-//   WHERE w.user_id = $1
-//   GROUP BY
-//     s.symbol, s.companyname, s.marketcap,
-//     s.currentprice, s.dayhigh, s.daylow, s.sector,
-//     CASE
-//       WHEN s.marketcap <    2000  THEN 'Small Cap'
-//       WHEN s.marketcap <=  10000  THEN 'Mid Cap'
-//       ELSE                            'Large Cap'
-//     END
-//   HAVING
-//     ($2::text) IS NULL
-//     OR CASE
-//          WHEN s.marketcap <    2000  THEN 'Small Cap'
-//          WHEN s.marketcap <=  10000  THEN 'Mid Cap'
-//          ELSE                            'Large Cap'
-//        END = $2::text
-//   ${orderClause};
-// `;
 
 
 
-//   try {
-//     const { rows: stocks } = await db.query(sql, [userId, capFilter]);
-
-//     const stockCount = stocks.length;
 
 
-//     res.render("watchlist.ejs", {
-//       stocks,
-//       stockCount,
-//       filter,
-//       capFilter
-//     });
-//   } catch (err) {
-//     console.error(err);
-//     res.send("Unable to load watchlist");
-//   }
-// });
 
-// app.get("/stock/:symbol", isAuthenticated, async (req, res) => {
-//   try {
-//     const symbol = req.params.symbol.toUpperCase();
 
-//     const sql = `
-//       SELECT 
-//         symbol,
-//         companyname,
-//         marketcap,
-//         currentprice,
-//         dayhigh,
-//         daylow,
-//         sector
-//       FROM stocks
-//       WHERE symbol = $1
-//     `;
-
-//     const { rows } = await db.query(sql, [symbol]);
-
-//     if (rows.length === 0) {
-//       return res.status(404).send("Stock not found");
-//     }
-
-//     const stock = {
-//       symbol: rows[0].symbol,
-//       companyname: rows[0].companyname,
-//       marketcap: rows[0].marketcap,
-//       price: parseFloat(rows[0].currentprice).toFixed(2),
-//       dayhigh: parseFloat(rows[0].dayhigh).toFixed(2),
-//       daylow: parseFloat(rows[0].daylow).toFixed(2),
-//       sector: rows[0].sector
-//     }
-
-//     // for now just pass ticker to the voew
-//     // here is where I make api calls for more data if needed
-//     //like const financialData = await getFinancialData(ticker);
-
-//     res.render("stockdetails.ejs", {
-//       stock: stock
-//       //will pass financialData: financialData etc
-//     });
-//   } catch (err) {
-//     console.error("Error fetching stock details:", err);
-//     res.status(500).send("Internal Server Error")
-//   }
-// });
 
 app.get("/api/chart/:symbol", isAuthenticated, async (req, res) => {
 
@@ -691,31 +533,7 @@ app.get("/api/chart/:symbol", isAuthenticated, async (req, res) => {
     }
   });
 });
-// app.get("/checkalerts", requireLogin, async (req, res) => {
-//   await checkAlertsAndNotify();
-//   res.redirect("/alerts");
-// });
 
-// app.get("/alerts", requireLogin, async (req, res) => {
-//   try {
-//     const userId = req.user.id;
-
-//     const result = await db.query(
-//       `SELECT a.id, s.symbol, a.target_price, a.direction, a.triggered
-//       FROM alerts a
-//       JOIN stocks s ON a.stock_id = s.stockid
-//       WHERE a.user_id = $1
-//       ORDER BY a.triggered ASC, s.symbol ASC`,
-//       [userId]
-//     );
-
-//     const alerts = result.rows;
-//     res.render("alerts", { alerts });
-//   } catch (err) {
-//     console.log(err);
-//     res.send("Unable to load alerts");
-//   }
-// });
 
 // API ROUTES
 
@@ -1181,59 +999,7 @@ app.post("/login",
   }
 );
 
-// app.post("/search", async (req, res) => {
-//   const symbol = req.body.symbol.toUpperCase();
-//   const { action } = req.body;
 
-//   if (action == "back") {
-//     return res.redirect("/dashboard");
-//   }
-
-//   try {
-//     const response = await axios.get("https://finnhub.io/api/v1/quote", {
-//       params: {
-//         symbol: symbol,
-//         token: API_KEY
-//       }
-//     });
-//     const data = response.data
-
-//     if (!data.c) {
-//       return res.render("searchresult.ejs", { error: "No stock found with that symbol.", stock: null });
-//     };
-
-//     const response2 = await axios.get("https://finnhub.io/api/v1/stock/profile2", {
-//       params: {
-//         symbol: symbol,
-//         token: API_KEY
-//       }
-//     });
-
-//     const data2 = response2.data;
-
-//     if (!data2.name) {
-//       return res.render("searchresult.ejs", { error: "No stock found with that symbol...", stock: null });
-//     }
-
-//     const stock = {
-//       symbol: symbol,
-//       companyname: data2.name,
-//       marketcap: data2.marketCapitalization,
-//       price: data.c.toFixed(2),
-//       dayhigh: data.h.toFixed(2),
-//       daylow: data.l.toFixed(2),
-//       sector: data2.finnhubIndustry
-//     };
-
-
-
-
-//     res.render("searchresult.ejs", { error: null, stock });
-//   } catch (err) {
-//     console.log(err);
-//     res.render("searchresult.ejs", { error: "Something went wrong. try again.", stock: null });
-//   }
-// });
 
 app.post("/add", async (req, res) => {
 
@@ -1466,18 +1232,16 @@ passport.use("google", new GoogleStrategy({
 app.get("/api/market/overview", isAuthenticated, async (req, res) => {
   try {
     // 1. Get Trending Symbols from Yahoo Finance
-    const trendingResult = await yahooFinance.trendingSymbols('US');
+    // trendingSymbols('US') only returns 5, which is not enough.
+    // Using 'most_actives' screener as a better proxy for functional "trending" list.
+    const trendingResult = await yahooFinance.screener({ scrIds: 'most_actives', count: 20 });
 
     // Filter out crypto and other non-stock types
-    // Fetch more initially (20) to ensure we have enough after filtering
-    const allTrending = trendingResult.quotes.slice(0, 20);
-    const trendingSymbolsCandidate = allTrending.map(q => q.symbol);
-
-    const detailedQuotes = await yahooFinance.quote(trendingSymbolsCandidate);
-
-    const validQuotes = detailedQuotes.filter(q =>
+    const validQuotes = trendingResult.quotes.filter(q =>
       (q.quoteType === 'EQUITY' || q.quoteType === 'ETF') && q.marketCap > 0
     );
+
+    console.log(`[MarketOverview] ${validQuotes.length} valid symbols found in most_actives.`);
 
     const quotes = validQuotes.slice(0, 10); // Take top 10 valid ones
 

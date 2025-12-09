@@ -103,7 +103,10 @@ function StockDetails() {
     return (
         <div>
             <div style={{ marginBottom: '2rem' }}>
-                <Link to="/watchlist" className="btn btn-outline" style={{ marginBottom: '1rem' }}>&larr; Back to Watchlist</Link>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem', alignItems: 'flex-start' }}>
+                    <Link to="/watchlist" className="btn btn-outline">&larr; Back to Watchlist</Link>
+                    <Link to="/find-stocks" className="btn btn-outline">&larr; Back to Discover</Link>
+                </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
                         <h1 style={{ margin: 0 }}>{stock.symbol}</h1>
