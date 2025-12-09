@@ -964,23 +964,26 @@ app.get("/api/search", isAuthenticated, async (req, res) => {
       return res.status(404).json({ error: "No stock found with that symbol." });
     }
 
-    const response2 = await axios.get("https://finnhub.io/api/v1/stock/profile2", {
-      params: { symbol: symbol.toUpperCase(), token: API_KEY }
-    });
-    const data2 = response2.data;
-
-    if (!data2.name) {
-      return res.status(404).json({ error: "No stock profile found." });
+    let data2 = {};
+    try {
+      const response2 = await axios.get("https://finnhub.io/api/v1/stock/profile2", {
+        params: { symbol: symbol.toUpperCase(), token: API_KEY }
+      });
+      data2 = response2.data;
+    } catch (err) {
+      console.log(`Profile not found for ${symbol}, using defaults.`);
     }
+
+    // Note: data2 might be empty for ETFs like SPY on free tier
 
     const stock = {
       symbol: symbol.toUpperCase(),
-      companyname: data2.name,
-      marketcap: data2.marketCapitalization,
+      companyname: data2.name || symbol.toUpperCase(),
+      marketcap: data2.marketCapitalization || 0,
       price: data.c.toFixed(2),
       dayhigh: data.h.toFixed(2),
       daylow: data.l.toFixed(2),
-      sector: data2.finnhubIndustry
+      sector: data2.finnhubIndustry || 'N/A'
     };
     res.json({ stock });
   } catch (err) {
