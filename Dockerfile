@@ -1,5 +1,5 @@
 # Build Stage for React
-FROM node:20-alpine as client-build
+FROM node:22-alpine as client-build
 WORKDIR /app/client
 COPY client/package*.json ./
 RUN npm ci
@@ -7,7 +7,7 @@ COPY client/ ./
 RUN npm run build
 
 # Production Stage for Node.js
-FROM node:20-alpine
+FROM node:22-alpine
 WORKDIR /usr/src/app
 
 # Install Python and dependencies (for backend scripts)

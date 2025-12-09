@@ -1437,8 +1437,8 @@ if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, 'public')));
 
   // Express 5 requires proper wildcard syntax
-  // Express 5 requires proper wildcard syntax
-  app.get('(.*)', (req, res) => {
+  // Fallback for SPA (using middleware to avoid router syntax issues)
+  app.use((req, res) => {
     res.sendFile(path.resolve(__dirname, 'public', 'index.html'));
   });
 }
