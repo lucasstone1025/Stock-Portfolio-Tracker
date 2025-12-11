@@ -2,7 +2,6 @@ import 'dotenv/config';
 
 import express from "express";
 import path from "path";
-import { fileURLToPath } from "url";
 import fs from "fs";
 import bodyParser from "body-parser";
 import pg from "pg";
@@ -17,12 +16,27 @@ import nodemailer from "nodemailer";
 import flash from "connect-flash";
 import cron from 'node-cron';
 import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
 import cors from 'cors';
-import _YahooFinance from 'yahoo-finance2';
-const yahooFinance = new _YahooFinance({ suppressNotices: ['yahooSurvey'] });
-console.log('YahooFinance instance keys:', Object.keys(yahooFinance));
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const yahooFinanceModule = require('yahoo-finance2');
+// In many CJS/ESM interops, we might need .default
+const YahooFinanceClass = yahooFinanceModule.YahooFinance || yahooFinanceModule.default || yahooFinanceModule;
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+let yahooFinance;
+try {
+  yahooFinance = new YahooFinanceClass();
+} catch (e) {
+  // If it's not a constructor, maybe it's the instance already?
+  yahooFinance = YahooFinanceClass;
+}
+
+console.log('YahooFinance initialized via require. Type:', typeof yahooFinance);
+
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -30,7 +44,7 @@ const PgSession = connectPgSimple(session);
 
 
 const app = express();
-app.set('trust proxy', 1); // trust proxy fix my problem!!
+app.set('trust proxy', 1); // trust proxy fix my problem
 
 const port = process.env.PORT || 3000;
 const saltRounds = 10;
@@ -62,7 +76,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.static("public"));
 app.use(cors({
-  origin: isProduction ? "https://trendtracker.co" : "http://localhost:5173",
+  origin: "http://localhost:5173", // Vite default port
   credentials: true
 }));
 
@@ -109,7 +123,7 @@ passport.deserializeUser(async (id, done) => {
 
   try {
     const { rows } = await db.query(
-      "SELECT id, email, first_name, phone FROM users WHERE id = $1",
+      "SELECT id, email, first_name FROM users WHERE id = $1",
       [id]
     );
     if (!rows || rows.length === 0) {
@@ -127,109 +141,45 @@ passport.deserializeUser(async (id, done) => {
 });
 
 //---------------------START OF FUNCTION HELPERS--------------------------------
-import twilio from 'twilio';
-
-let twilioClient;
-if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
-  twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-  console.log("Twilio client initialized");
-} else {
-  console.log("Twilio credentials missing. SMS alerts will not work.");
-}
 
 async function checkAlertsAndNotify() {
-  console.log(`[${new Date().toISOString()}] Checking alerts...`);
+
   try {
     const alertResult = await db.query(
-      `SELECT a.id, a.user_id, a.stock_id, a.target_price, a.direction, a.triggered, a.alert_method,
-      u.email, u.phone, s.symbol
+      `SELECT a.id, a.user_id, a.stock_id, a.target_price, a.direction, a.triggered,
+      u.email, s.symbol, s.currentprice
       FROM alerts a
       JOIN users u ON a.user_id = u.id
       JOIN stocks s ON a.stock_id = s.stockid
       WHERE a.triggered = FALSE`
     );
 
-    if (alertResult.rows.length === 0) {
-      console.log("No active alerts to check.");
-      return;
-    }
-
-    // Group alerts by stock symbol to minimize API calls
-    const alertsBySymbol = {};
     for (const alert of alertResult.rows) {
-      if (!alertsBySymbol[alert.symbol]) {
-        alertsBySymbol[alert.symbol] = [];
-      }
-      alertsBySymbol[alert.symbol].push(alert);
-    }
+      const current = parseFloat(alert.currentprice);
+      const target = parseFloat(alert.target_price);
+      const direction = alert.direction;
 
-    // Check price for each symbol
-    for (const symbol in alertsBySymbol) {
-      try {
-        // Fetch current price
-        const response = await axios.get("https://finnhub.io/api/v1/quote", {
-          params: { symbol: symbol, token: API_KEY }
+      const shouldTrigger =
+        (direction === "up" && current >= target) ||
+        (direction === "down" && current <= target);
+
+      if (shouldTrigger) {
+        await transporter.sendMail({
+          from: '"Stock Watcher" lucasstone49@gmail.com',
+          to: alert.email,
+          subject: `Price Alert for ${alert.symbol}`,
+          text: `The stock ${alert.symbol} had ${direction === "up" ? "risen above" : "fallen below"} your target price of $${target}. Current price: $${current}.`
         });
-        const currentPrice = response.data.c;
 
-        if (!currentPrice) {
-          console.error(`Failed to fetch price for ${symbol}`);
-          continue;
-        }
+        await db.query(`UPDATE alerts SET triggered = TRUE WHERE id = $1`, [alert.id]);
 
-        // Check all alerts for this symbol
-        for (const alert of alertsBySymbol[symbol]) {
-          const target = parseFloat(alert.target_price);
-          const direction = alert.direction; // 'up' or 'down'
-
-          const shouldTrigger =
-            (direction === "up" && currentPrice >= target) ||
-            (direction === "down" && currentPrice <= target);
-
-          if (shouldTrigger) {
-            const messageText = `TrendTracker Alert: ${alert.symbol} has ${direction === "up" ? "risen above" : "fallen below"} your target of $${target}. Current: $${currentPrice}.`;
-            let sentMethod = [];
-
-            // Email
-            if (alert.alert_method === 'email' || alert.alert_method === 'both' || !alert.alert_method) {
-              await transporter.sendMail({
-                from: '"TrendTracker" lucasstone49@gmail.com',
-                to: alert.email,
-                subject: `Price Alert for ${alert.symbol}`,
-                text: messageText
-              });
-              sentMethod.push('email');
-            }
-
-            // SMS
-            if ((alert.alert_method === 'sms' || alert.alert_method === 'both') && alert.phone && twilioClient) {
-              try {
-                await twilioClient.messages.create({
-                  body: messageText,
-                  from: process.env.TWILIO_PHONE_NUMBER,
-                  to: alert.phone
-                });
-                sentMethod.push('sms');
-              } catch (smsErr) {
-                console.error("Failed to send SMS:", smsErr);
-              }
-            }
-
-            await db.query(`UPDATE alerts SET triggered = TRUE WHERE id = $1`, [alert.id]);
-            console.log(`Alert triggered for ${alert.symbol} (${direction} $${target}). Sent via: ${sentMethod.join(', ')}`);
-          }
-        }
-      } catch (err) {
-        console.error(`Error checking symbol ${symbol}:`, err.message);
+        console.log(`Alert triggered and email sent for ${alert.symbol} (${direction} $${target})`);
       }
     }
   } catch (err) {
-    console.error("Error in checkAlertsAndNotify:", err);
+    console.log(err);
   }
 }
-
-// Check alerts every 5 minutes (300000 ms)
-setInterval(checkAlertsAndNotify, 300000);
 
 async function isMarketOpen() {
 
@@ -416,7 +366,17 @@ app.listen(port, () => {
   console.log(`Server running on port ${port}!`);
 });
 
+app.get("/", async (req, res) => {
+  res.redirect("/login");
+});
 
+app.get("/login", async (req, res) => {
+  res.render("login.ejs");
+});
+
+app.get("/register", async (req, res) => {
+  res.render("register.ejs");
+});
 
 app.get("/auth/google", passport.authenticate("google", {
   scope: ["profile", "email"],
@@ -425,22 +385,166 @@ app.get("/auth/google", passport.authenticate("google", {
 
 app.get("/auth/google/callback",
   passport.authenticate("google", {
-    failureRedirect: "/login",
-  }),
-  function (req, res) {
-    // Successful authentication, redirect to frontend dashboard.
-    const frontendUrl = isProduction ? "https://trendtracker.co" : "http://localhost:5173";
-    res.redirect(`${frontendUrl}/dashboard`);
-  }
+    successRedirect: "/dashboard",
+    failureRedirect: "/login"
+  })
 );
 
+app.get("/dashboard", requireLogin, (req, res) => {
+  res.render("dashboard", { firstName: capitalizeFirst(req.user.first_name) });
+});
+
+app.get("/findstocks", requireLogin, async (req, res) => {
+  res.render("findstocks.ejs");
+});
+
+app.get("/search", requireLogin, async (req, res) => {
+  res.render("search.ejs");
+});
+
+app.get("/help", requireLogin, async (req, res) => {
+  res.render("help.ejs");
+});
+
+app.get("/logout", async (req, res) => {
+  req.logout((err) => {
+    if (err) {
+      console.log(err);
+    } else {
+      res.redirect("/");
+    }
+  })
+});
+
+app.get("/chart", async (req, res) => {
+  // read json data from file
+  try {
+
+    //run python script to get latest data
+    await runPythonScript();
+
+    const dataPath = path.join(__dirname, 'public', 'data', `${ticker.toLowerCase()}_${period}_output.json`);
+    const stockData = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+
+    res.render('chart', { stockData });
+
+  } catch (err) {
+    console.error('Error', err);
+    res.status(500).render('error', { message: 'Failed to load chart data.' });
+  }
+});
+
+app.get("/watchlist", requireLogin, async (req, res) => {
+  const userId = req.user.id;
+  const filter = req.query.filter || "def";
+  const capFilter = req.query.capFilter || null;
+
+  // build ORDER BY once
+  let orderClause = "";
+  if (filter === "alpha") {
+    orderClause = "ORDER BY s.symbol";
+  } else if (filter === "asc") {
+    orderClause = "ORDER BY s.marketcap";
+  } else if (filter === "desc") {
+    orderClause = "ORDER BY s.marketcap DESC";
+  }
+
+  const sql = `
+  SELECT
+    s.symbol,
+    s.companyname,
+    s.marketcap,
+    s.currentprice,
+    s.dayhigh,
+    s.daylow,
+    s.sector
+  FROM watchlist w
+  JOIN stocks s ON w.stock_id = s.stockid
+  WHERE w.user_id = $1
+  GROUP BY
+    s.symbol, s.companyname, s.marketcap,
+    s.currentprice, s.dayhigh, s.daylow, s.sector,
+    CASE
+      WHEN s.marketcap <    2000  THEN 'Small Cap'
+      WHEN s.marketcap <=  10000  THEN 'Mid Cap'
+      ELSE                            'Large Cap'
+    END
+  HAVING
+    ($2::text) IS NULL
+    OR CASE
+         WHEN s.marketcap <    2000  THEN 'Small Cap'
+         WHEN s.marketcap <=  10000  THEN 'Mid Cap'
+         ELSE                            'Large Cap'
+       END = $2::text
+  ${orderClause};
+`;
 
 
 
+  try {
+    const { rows: stocks } = await db.query(sql, [userId, capFilter]);
+
+    const stockCount = stocks.length;
 
 
+    res.render("watchlist.ejs", {
+      stocks,
+      stockCount,
+      filter,
+      capFilter
+    });
+  } catch (err) {
+    console.error(err);
+    res.send("Unable to load watchlist");
+  }
+});
 
+app.get("/stock/:symbol", isAuthenticated, async (req, res) => {
+  try {
+    const symbol = req.params.symbol.toUpperCase();
 
+    const sql = `
+      SELECT 
+        symbol,
+        companyname,
+        marketcap,
+        currentprice,
+        dayhigh,
+        daylow,
+        sector
+      FROM stocks
+      WHERE symbol = $1
+    `;
+
+    const { rows } = await db.query(sql, [symbol]);
+
+    if (rows.length === 0) {
+      return res.status(404).send("Stock not found");
+    }
+
+    const stock = {
+      symbol: rows[0].symbol,
+      companyname: rows[0].companyname,
+      marketcap: rows[0].marketcap,
+      price: parseFloat(rows[0].currentprice).toFixed(2),
+      dayhigh: parseFloat(rows[0].dayhigh).toFixed(2),
+      daylow: parseFloat(rows[0].daylow).toFixed(2),
+      sector: rows[0].sector
+    }
+
+    // for now just pass ticker to the voew
+    // here is where I make api calls for more data if needed
+    //like const financialData = await getFinancialData(ticker);
+
+    res.render("stockdetails.ejs", {
+      stock: stock
+      //will pass financialData: financialData etc
+    });
+  } catch (err) {
+    console.error("Error fetching stock details:", err);
+    res.status(500).send("Internal Server Error")
+  }
+});
 
 app.get("/api/chart/:symbol", isAuthenticated, async (req, res) => {
 
@@ -534,7 +638,31 @@ app.get("/api/chart/:symbol", isAuthenticated, async (req, res) => {
     }
   });
 });
+app.get("/checkalerts", requireLogin, async (req, res) => {
+  await checkAlertsAndNotify();
+  res.redirect("/alerts");
+});
 
+app.get("/alerts", requireLogin, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const result = await db.query(
+      `SELECT a.id, s.symbol, a.target_price, a.direction, a.triggered
+      FROM alerts a
+      JOIN stocks s ON a.stock_id = s.stockid
+      WHERE a.user_id = $1
+      ORDER BY a.triggered ASC, s.symbol ASC`,
+      [userId]
+    );
+
+    const alerts = result.rows;
+    res.render("alerts", { alerts });
+  } catch (err) {
+    console.log(err);
+    res.send("Unable to load alerts");
+  }
+});
 
 // API ROUTES
 
@@ -558,7 +686,7 @@ app.post("/api/login", (req, res, next) => {
 });
 
 app.post("/api/register", async (req, res) => {
-  const { email, password, first_name, phone } = req.body;
+  const { email, password, first_name } = req.body;
   try {
     const checkResult = await db.query("SELECT * FROM users WHERE email = $1", [email]);
     if (checkResult.rows.length > 0) {
@@ -566,8 +694,8 @@ app.post("/api/register", async (req, res) => {
     }
     const hash = await bcrypt.hash(password, saltRounds);
     const result = await db.query(
-      "INSERT INTO users (email, password_hash, first_name, phone) VALUES ($1, $2, $3, $4) RETURNING id, email, first_name, phone",
-      [email, hash, first_name, phone]
+      "INSERT INTO users (email, password_hash, first_name) VALUES ($1, $2, $3) RETURNING id, email, first_name",
+      [email, hash, first_name]
     );
     const user = result.rows[0];
     req.login(user, (err) => {
@@ -587,23 +715,8 @@ app.post("/api/logout", (req, res) => {
   });
 });
 
-app.get("/api/dashboard", isAuthenticated, async (req, res) => {
-  try {
-    const user = req.user;
-
-    // Get stats
-    const watchlistCount = await db.query("SELECT COUNT(*) FROM watchlist WHERE user_id = $1", [user.id]);
-    const alertsCount = await db.query("SELECT COUNT(*) FROM alerts WHERE user_id = $1 AND triggered = FALSE", [user.id]);
-
-    res.json({
-      firstName: user.first_name,
-      watchlistCount: parseInt(watchlistCount.rows[0].count),
-      alertsCount: parseInt(alertsCount.rows[0].count)
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to fetch dashboard data" });
-  }
+app.get("/api/dashboard", isAuthenticated, (req, res) => {
+  res.json({ firstName: capitalizeFirst(req.user.first_name) });
 });
 
 app.get("/api/watchlist", isAuthenticated, async (req, res) => {
@@ -662,57 +775,24 @@ app.get("/api/watchlist", isAuthenticated, async (req, res) => {
 app.get("/api/stock/:symbol", isAuthenticated, async (req, res) => {
   try {
     const symbol = req.params.symbol.toUpperCase();
-
-    // 1. Try DB first
     const sql = `
       SELECT symbol, companyname, marketcap, currentprice, dayhigh, daylow, sector
       FROM stocks WHERE symbol = $1
     `;
     const { rows } = await db.query(sql, [symbol]);
 
-    if (rows.length > 0) {
-      console.log(`[StockDetails] Found ${symbol} in DB`);
-      const stock = {
-        symbol: rows[0].symbol,
-        companyname: rows[0].companyname,
-        marketcap: rows[0].marketcap,
-        price: parseFloat(rows[0].currentprice).toFixed(2),
-        dayhigh: parseFloat(rows[0].dayhigh).toFixed(2),
-        daylow: parseFloat(rows[0].daylow).toFixed(2),
-        sector: rows[0].sector
-      };
-      return res.json(stock);
-    }
-
-    // 2. Fallback to API
-    console.log(`[StockDetails] ${symbol} not in DB, fetching from Finnhub...`);
-    const response = await axios.get("https://finnhub.io/api/v1/quote", {
-      params: { symbol: symbol, token: API_KEY }
-    });
-    const data = response.data;
-
-    if (data.c === 0 && data.d === null && data.dp === null) {
+    if (rows.length === 0) {
       return res.status(404).json({ error: "Stock not found" });
     }
 
-    let data2 = {};
-    try {
-      const response2 = await axios.get("https://finnhub.io/api/v1/stock/profile2", {
-        params: { symbol: symbol, token: API_KEY }
-      });
-      data2 = response2.data;
-    } catch (err) {
-      console.log(`Profile not found for ${symbol}, using defaults.`);
-    }
-
     const stock = {
-      symbol: symbol,
-      companyname: data2.name || symbol,
-      marketcap: data2.marketCapitalization || 0,
-      price: data.c.toFixed(2),
-      dayhigh: data.h.toFixed(2),
-      daylow: data.l.toFixed(2),
-      sector: data2.finnhubIndustry || 'N/A'
+      symbol: rows[0].symbol,
+      companyname: rows[0].companyname,
+      marketcap: rows[0].marketcap,
+      price: parseFloat(rows[0].currentprice).toFixed(2),
+      dayhigh: parseFloat(rows[0].dayhigh).toFixed(2),
+      daylow: parseFloat(rows[0].daylow).toFixed(2),
+      sector: rows[0].sector
     };
     res.json(stock);
   } catch (err) {
@@ -753,41 +833,6 @@ app.get("/api/news", isAuthenticated, async (req, res) => {
   }
 });
 
-app.get("/api/news/:symbol", isAuthenticated, async (req, res) => {
-  try {
-    const symbol = req.params.symbol.toUpperCase();
-    // Search for the symbol to get related news
-    const result = await yahooFinance.search(symbol, { newsCount: 10 });
-
-    if (!result.news || result.news.length === 0) {
-      return res.json([]);
-    }
-
-    const news = result.news.map(item => {
-      let timeInSeconds = item.providerPublishTime;
-      if (timeInSeconds && timeInSeconds > 9999999999) {
-        timeInSeconds = Math.floor(timeInSeconds / 1000);
-      }
-
-      return {
-        id: item.uuid,
-        headline: item.title,
-        url: item.link,
-        summary: item.type === "VIDEO" ? "Video content" : "Click to read full article...",
-        source: item.publisher,
-        datetime: timeInSeconds,
-        image: item.thumbnail?.resolutions?.[0]?.url || null,
-        category: "Company News"
-      };
-    });
-
-    res.json(news);
-  } catch (err) {
-    console.error(`Error fetching news for ${req.params.symbol}:`, err);
-    res.status(500).json({ error: "Failed to fetch stock news" });
-  }
-});
-
 app.get("/api/search", isAuthenticated, async (req, res) => {
   const symbol = req.query.symbol;
   if (!symbol) return res.status(400).json({ error: "Symbol is required" });
@@ -797,35 +842,28 @@ app.get("/api/search", isAuthenticated, async (req, res) => {
       params: { symbol: symbol.toUpperCase(), token: API_KEY }
     });
     const data = response.data;
-    console.log(`[Search] Symbol: ${symbol}, Quote Data:`, data);
 
-    // Some ETFs might return 0 if market is closed/pre-market? 
-    // Or if symbol is invalid, Finnhub returns c: 0.
-    if (data.c === 0 && data.d === null && data.dp === null) {
-      console.log(`[Search] Invalid symbol ${symbol} (all nulls/zeros)`);
+    if (!data.c) {
       return res.status(404).json({ error: "No stock found with that symbol." });
     }
 
-    let data2 = {};
-    try {
-      const response2 = await axios.get("https://finnhub.io/api/v1/stock/profile2", {
-        params: { symbol: symbol.toUpperCase(), token: API_KEY }
-      });
-      data2 = response2.data;
-    } catch (err) {
-      console.log(`Profile not found for ${symbol}, using defaults.`);
-    }
+    const response2 = await axios.get("https://finnhub.io/api/v1/stock/profile2", {
+      params: { symbol: symbol.toUpperCase(), token: API_KEY }
+    });
+    const data2 = response2.data;
 
-    // Note: data2 might be empty for ETFs like SPY on free tier
+    if (!data2.name) {
+      return res.status(404).json({ error: "No stock profile found." });
+    }
 
     const stock = {
       symbol: symbol.toUpperCase(),
-      companyname: data2.name || symbol.toUpperCase(),
-      marketcap: data2.marketCapitalization || 0,
+      companyname: data2.name,
+      marketcap: data2.marketCapitalization,
       price: data.c.toFixed(2),
       dayhigh: data.h.toFixed(2),
       daylow: data.l.toFixed(2),
-      sector: data2.finnhubIndustry || 'N/A'
+      sector: data2.finnhubIndustry
     };
     res.json({ stock });
   } catch (err) {
@@ -837,7 +875,6 @@ app.get("/api/search", isAuthenticated, async (req, res) => {
 app.post("/api/watchlist/add", isAuthenticated, async (req, res) => {
   const { symbol, price, dayhigh, daylow, companyname, marketcap, sector } = req.body;
   const userId = req.user.id;
-  console.log(`[WatchlistAdd] Request to add ${symbol} for user ${userId}. MarketCap: ${marketcap}, Sector: ${sector}`);
 
   try {
     let result = await db.query("SELECT * FROM stocks WHERE symbol = $1", [symbol]);
@@ -845,9 +882,7 @@ app.post("/api/watchlist/add", isAuthenticated, async (req, res) => {
 
     if (result.rows.length !== 0) {
       stockId = result.rows[0].stockid;
-      console.log(`[WatchlistAdd] Stock ${symbol} already exists (ID: ${stockId})`);
     } else {
-      console.log(`[WatchlistAdd] Inserting new stock ${symbol}...`);
       const insert = await db.query(
         `INSERT INTO stocks (symbol, currentprice, dayhigh, daylow, companyname, marketcap, sector)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -855,7 +890,6 @@ app.post("/api/watchlist/add", isAuthenticated, async (req, res) => {
         [symbol, price, dayhigh, daylow, companyname, marketcap, sector]
       );
       stockId = insert.rows[0].stockid;
-      console.log(`[WatchlistAdd] Created new stock ${symbol} (ID: ${stockId})`);
     }
 
     await db.query(
@@ -864,16 +898,15 @@ app.post("/api/watchlist/add", isAuthenticated, async (req, res) => {
       ON CONFLICT DO NOTHING`,
       [userId, stockId]
     );
-    console.log(`[WatchlistAdd] Added ${symbol} to watchlist`);
     res.json({ message: "Added to watchlist" });
   } catch (err) {
-    console.error(`[WatchlistAdd] Error adding ${symbol}:`, err);
+    console.error(err);
     res.status(500).json({ error: "Failed to add to watchlist" });
   }
 });
 
 app.post("/api/alerts/create", isAuthenticated, async (req, res) => {
-  const { symbol, direction, target_price, alert_method } = req.body; // 'email', 'sms', 'both'
+  const { symbol, direction, target_price } = req.body;
   const userId = req.user.id;
 
   if (!symbol || !direction || !target_price) return res.status(400).json({ error: "Missing fields" });
@@ -884,9 +917,9 @@ app.post("/api/alerts/create", isAuthenticated, async (req, res) => {
     if (stockResult.rows.length > 0) {
       const stockId = stockResult.rows[0].stockid;
       await db.query(
-        `INSERT INTO alerts (user_id, stock_id, target_price, direction, alert_method)
-        VALUES ($1, $2, $3, $4, $5)`,
-        [userId, stockId, target_price, direction, alert_method || 'email']
+        `INSERT INTO alerts (user_id, stock_id, target_price, direction)
+        VALUES ($1, $2, $3, $4)`,
+        [userId, stockId, target_price, direction]
       );
       res.json({ message: "Alert created successfully" });
     } else {
@@ -895,34 +928,6 @@ app.post("/api/alerts/create", isAuthenticated, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to create alert" });
-  }
-});
-
-app.get("/api/alerts", isAuthenticated, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const result = await db.query(
-      `SELECT a.id, s.symbol, s.currentprice, a.target_price, a.direction, a.alert_method
-       FROM alerts a
-       JOIN stocks s ON a.stock_id = s.stockid
-       WHERE a.user_id = $1 AND a.triggered = FALSE
-       ORDER BY s.symbol ASC`,
-      [userId]
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error("Error fetching alerts:", err);
-    res.status(500).json({ error: "Failed to fetch alerts" });
-  }
-});
-
-app.post("/api/alerts/check", isAuthenticated, async (req, res) => {
-  try {
-    await checkAlertsAndNotify();
-    res.json({ message: "Alert check triggered successfully" });
-  } catch (err) {
-    console.error("Manual alert check failed:", err);
-    res.status(500).json({ error: "Failed to check alerts" });
   }
 });
 
@@ -1000,7 +1005,59 @@ app.post("/login",
   }
 );
 
+app.post("/search", async (req, res) => {
+  const symbol = req.body.symbol.toUpperCase();
+  const { action } = req.body;
 
+  if (action == "back") {
+    return res.redirect("/dashboard");
+  }
+
+  try {
+    const response = await axios.get("https://finnhub.io/api/v1/quote", {
+      params: {
+        symbol: symbol,
+        token: API_KEY
+      }
+    });
+    const data = response.data
+
+    if (!data.c) {
+      return res.render("searchresult.ejs", { error: "No stock found with that symbol.", stock: null });
+    };
+
+    const response2 = await axios.get("https://finnhub.io/api/v1/stock/profile2", {
+      params: {
+        symbol: symbol,
+        token: API_KEY
+      }
+    });
+
+    const data2 = response2.data;
+
+    if (!data2.name) {
+      return res.render("searchresult.ejs", { error: "No stock found with that symbol...", stock: null });
+    }
+
+    const stock = {
+      symbol: symbol,
+      companyname: data2.name,
+      marketcap: data2.marketCapitalization,
+      price: data.c.toFixed(2),
+      dayhigh: data.h.toFixed(2),
+      daylow: data.l.toFixed(2),
+      sector: data2.finnhubIndustry
+    };
+
+
+
+
+    res.render("searchresult.ejs", { error: null, stock });
+  } catch (err) {
+    console.log(err);
+    res.render("searchresult.ejs", { error: "Something went wrong. try again.", stock: null });
+  }
+});
 
 app.post("/add", async (req, res) => {
 
@@ -1228,71 +1285,6 @@ passport.use("google", new GoogleStrategy({
     cb(err);
   }
 }));
-
-// Market Overview Endpoint
-app.get("/api/market/overview", isAuthenticated, async (req, res) => {
-  try {
-    // 1. Get Trending Symbols from Yahoo Finance
-    // trendingSymbols('US') only returns 5, which is not enough.
-    // Using 'most_actives' screener as a better proxy for functional "trending" list.
-    const trendingResult = await yahooFinance.screener({ scrIds: 'most_actives', count: 20 });
-
-    // Filter out crypto and other non-stock types
-    const validQuotes = trendingResult.quotes.filter(q =>
-      (q.quoteType === 'EQUITY' || q.quoteType === 'ETF') && q.marketCap > 0
-    );
-
-    console.log(`[MarketOverview] ${validQuotes.length} valid symbols found in most_actives.`);
-
-    const quotes = validQuotes.slice(0, 10); // Take top 10 valid ones
-
-    // 3. Format trending data
-    const trending = quotes.map(q => ({
-      symbol: q.symbol,
-      name: q.shortName || q.longName || q.symbol,
-      price: q.regularMarketPrice,
-      change: q.regularMarketChange,
-      changePercent: q.regularMarketChangePercent
-    }));
-
-    // 4. Get Top Gainers and Losers directly from API
-    // dailyGainers/dailyLosers are deprecated, use screener instead
-    const gainersResult = await yahooFinance.screener({ scrIds: 'day_gainers', count: 5 });
-    const losersResult = await yahooFinance.screener({ scrIds: 'day_losers', count: 5 });
-
-    const formatMover = (q) => ({
-      symbol: q.symbol,
-      name: q.shortName || q.longName || q.symbol,
-      price: q.regularMarketPrice,
-      change: q.regularMarketChange,
-      changePercent: q.regularMarketChangePercent
-    });
-
-    const gainers = gainersResult.quotes.map(formatMover);
-    const losers = losersResult.quotes.map(formatMover);
-
-    res.json({
-      trending,
-      gainers,
-      losers
-    });
-  } catch (err) {
-    console.error("Error fetching market overview:", err);
-    res.status(500).json({ error: "Failed to fetch market data" });
-  }
-});
-
-// Serve React App in production
-if (process.env.NODE_ENV === 'production') {
-  const __dirname = path.resolve();
-  app.use(express.static(path.join(__dirname, 'public')));
-
-  // Express 5 requires proper wildcard syntax
-  // Fallback for SPA (using middleware to avoid router syntax issues)
-  app.use((req, res) => {
-    res.sendFile(path.resolve(__dirname, 'public', 'index.html'));
-  });
-}
 
 app.listen(port, () => {
   console.log("Server running!");
