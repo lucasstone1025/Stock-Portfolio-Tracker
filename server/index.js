@@ -18,16 +18,15 @@ import flash from "connect-flash";
 import cron from 'node-cron';
 import { spawn } from 'child_process';
 import cors from 'cors';
-import _YahooFinance from 'yahoo-finance2';
-const yahooFinance = new _YahooFinance({ suppressNotices: ['yahooSurvey'] });
-console.log('YahooFinance instance keys:', Object.keys(yahooFinance));
 
-// Simple in-memory cache to avoid hitting Yahoo Finance rate limits
+// Simple in-memory cache to avoid hitting API rate limits
 const cache = {
   marketOverview: { data: null, timestamp: 0 },
-  news: { data: null, timestamp: 0 }
+  news: { data: null, timestamp: 0 },
+  stockNews: {} // Per-symbol cache: { AAPL: { data: [...], timestamp: 123 }, ... }
 };
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
+const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes in milliseconds
+const STOCK_NEWS_CACHE_DURATION = 15 * 60 * 1000; // 15 minutes for individual stock news
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -737,29 +736,22 @@ app.get("/api/news", isAuthenticated, async (req, res) => {
       return res.json(cache.news.data);
     }
 
-    console.log('[News] Cache miss, fetching from Yahoo Finance...');
-    const result = await yahooFinance.search("financial news", { newsCount: 20 });
-
-    // Transform Yahoo Finance results to match the structure expected by the frontend (FinnHub format)
-    const news = result.news.map(item => {
-      // Determine if time is ms or s
-      let timeInSeconds = item.providerPublishTime;
-      if (timeInSeconds > 9999999999) {
-        timeInSeconds = Math.floor(timeInSeconds / 1000);
-      }
-
-      return {
-        id: item.uuid,
-        headline: item.title,
-        url: item.link,
-        // Yahoo search doesn't always provide a text summary, providing a fallback or empty string
-        summary: item.type === "VIDEO" ? "Video content" : "Click to read full article...",
-        source: item.publisher,
-        datetime: timeInSeconds,
-        image: item.thumbnail?.resolutions?.[0]?.url || null,
-        category: "General"
-      };
+    console.log('[News] Cache miss, fetching from Finnhub...');
+    const response = await axios.get("https://finnhub.io/api/v1/news", {
+      params: { category: "general", token: API_KEY }
     });
+
+    // Finnhub already returns data in our expected format
+    const news = response.data.slice(0, 20).map(item => ({
+      id: item.id,
+      headline: item.headline,
+      url: item.url,
+      summary: item.summary || "Click to read full article...",
+      source: item.source,
+      datetime: item.datetime,
+      image: item.image || null,
+      category: item.category || "General"
+    }));
 
     // Update cache
     cache.news = { data: news, timestamp: now };
@@ -779,34 +771,51 @@ app.get("/api/news", isAuthenticated, async (req, res) => {
 app.get("/api/news/:symbol", isAuthenticated, async (req, res) => {
   try {
     const symbol = req.params.symbol.toUpperCase();
-    // Search for the symbol to get related news
-    const result = await yahooFinance.search(symbol, { newsCount: 10 });
+    const now = Date.now();
 
-    if (!result.news || result.news.length === 0) {
-      return res.json([]);
+    // Check per-symbol cache first
+    if (cache.stockNews[symbol] && (now - cache.stockNews[symbol].timestamp) < STOCK_NEWS_CACHE_DURATION) {
+      console.log(`[News/${symbol}] Serving from cache`);
+      return res.json(cache.stockNews[symbol].data);
     }
 
-    const news = result.news.map(item => {
-      let timeInSeconds = item.providerPublishTime;
-      if (timeInSeconds && timeInSeconds > 9999999999) {
-        timeInSeconds = Math.floor(timeInSeconds / 1000);
-      }
+    console.log(`[News/${symbol}] Cache miss, fetching from Finnhub...`);
 
-      return {
-        id: item.uuid,
-        headline: item.title,
-        url: item.link,
-        summary: item.type === "VIDEO" ? "Video content" : "Click to read full article...",
-        source: item.publisher,
-        datetime: timeInSeconds,
-        image: item.thumbnail?.resolutions?.[0]?.url || null,
-        category: "Company News"
-      };
+    // Finnhub company news requires date range (last 7 days)
+    const toDate = new Date().toISOString().split('T')[0];
+    const fromDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    const response = await axios.get("https://finnhub.io/api/v1/company-news", {
+      params: {
+        symbol: symbol,
+        from: fromDate,
+        to: toDate,
+        token: API_KEY
+      }
     });
+
+    const news = response.data.slice(0, 10).map(item => ({
+      id: item.id,
+      headline: item.headline,
+      url: item.url,
+      summary: item.summary || "Click to read full article...",
+      source: item.source,
+      datetime: item.datetime,
+      image: item.image || null,
+      category: "Company News"
+    }));
+
+    // Update per-symbol cache
+    cache.stockNews[symbol] = { data: news, timestamp: now };
 
     res.json(news);
   } catch (err) {
     console.error(`Error fetching news for ${req.params.symbol}:`, err);
+    // Return cached data if available, even if stale
+    if (cache.stockNews[req.params.symbol.toUpperCase()]?.data) {
+      console.log(`[News/${req.params.symbol}] Error occurred, serving stale cache`);
+      return res.json(cache.stockNews[req.params.symbol.toUpperCase()].data);
+    }
     res.status(500).json({ error: "Failed to fetch stock news" });
   }
 });
@@ -1257,7 +1266,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.
   console.log("Google OAuth credentials missing. Google login will not work.");
 }
 
-// Market Overview Endpoint
+// Market Overview Endpoint - Using Finnhub for reliable data
 app.get("/api/market/overview", isAuthenticated, async (req, res) => {
   try {
     // Check cache first
@@ -1267,46 +1276,126 @@ app.get("/api/market/overview", isAuthenticated, async (req, res) => {
       return res.json(cache.marketOverview.data);
     }
 
-    console.log('[MarketOverview] Cache miss, fetching from Yahoo Finance...');
+    console.log('[MarketOverview] Cache miss, fetching from Finnhub...');
 
-    // 1. Get Trending Symbols from Yahoo Finance
-    // trendingSymbols('US') only returns 5, which is not enough.
-    // Using 'most_actives' screener as a better proxy for functional "trending" list.
-    const trendingResult = await yahooFinance.screener({ scrIds: 'most_actives', count: 20 });
+    // Popular/trending stocks to display (mix of tech, finance, retail, healthcare)
+    const popularSymbols = [
+      'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'JPM', 'V', 'WMT',
+      'JNJ', 'UNH', 'HD', 'PG', 'BAC', 'DIS', 'NFLX', 'AMD', 'CRM', 'INTC'
+    ];
 
-    // Filter out crypto and other non-stock types
-    const validQuotes = trendingResult.quotes.filter(q =>
-      (q.quoteType === 'EQUITY' || q.quoteType === 'ETF') && q.marketCap > 0
-    );
+    // Fetch quotes for all symbols in parallel
+    const quotePromises = popularSymbols.map(async (symbol) => {
+      try {
+        const response = await axios.get("https://finnhub.io/api/v1/quote", {
+          params: { symbol, token: API_KEY }
+        });
+        const q = response.data;
 
-    console.log(`[MarketOverview] ${validQuotes.length} valid symbols found in most_actives.`);
+        // Skip if no valid data
+        if (!q.c || q.c === 0) return null;
 
-    const quotes = validQuotes.slice(0, 10); // Take top 10 valid ones
-
-    // 3. Format trending data
-    const trending = quotes.map(q => ({
-      symbol: q.symbol,
-      name: q.shortName || q.longName || q.symbol,
-      price: q.regularMarketPrice,
-      change: q.regularMarketChange,
-      changePercent: q.regularMarketChangePercent
-    }));
-
-    // 4. Get Top Gainers and Losers directly from API
-    // dailyGainers/dailyLosers are deprecated, use screener instead
-    const gainersResult = await yahooFinance.screener({ scrIds: 'day_gainers', count: 5 });
-    const losersResult = await yahooFinance.screener({ scrIds: 'day_losers', count: 5 });
-
-    const formatMover = (q) => ({
-      symbol: q.symbol,
-      name: q.shortName || q.longName || q.symbol,
-      price: q.regularMarketPrice,
-      change: q.regularMarketChange,
-      changePercent: q.regularMarketChangePercent
+        return {
+          symbol,
+          name: symbol, // Finnhub quote doesn't include name, we'll use symbol
+          price: q.c,
+          change: q.d || 0,
+          changePercent: q.dp || 0,
+          high: q.h,
+          low: q.l,
+          prevClose: q.pc
+        };
+      } catch (err) {
+        console.log(`[MarketOverview] Failed to fetch ${symbol}:`, err.message);
+        return null;
+      }
     });
 
-    const gainers = gainersResult.quotes.map(formatMover);
-    const losers = losersResult.quotes.map(formatMover);
+    // Add small delays between batches to respect rate limits (60/min)
+    const results = [];
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < quotePromises.length; i += BATCH_SIZE) {
+      const batch = quotePromises.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(batch);
+      results.push(...batchResults);
+
+      // Small delay between batches if more to come
+      if (i + BATCH_SIZE < quotePromises.length) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    const validQuotes = results.filter(q => q !== null);
+
+    // Get company names for the symbols we have
+    const profilePromises = validQuotes.slice(0, 10).map(async (quote) => {
+      try {
+        const response = await axios.get("https://finnhub.io/api/v1/stock/profile2", {
+          params: { symbol: quote.symbol, token: API_KEY }
+        });
+        return { symbol: quote.symbol, name: response.data.name || quote.symbol };
+      } catch {
+        return { symbol: quote.symbol, name: quote.symbol };
+      }
+    });
+
+    // Fetch profiles with delay
+    const profiles = [];
+    for (let i = 0; i < profilePromises.length; i += 5) {
+      const batch = profilePromises.slice(i, i + 5);
+      const batchResults = await Promise.all(batch);
+      profiles.push(...batchResults);
+      if (i + 5 < profilePromises.length) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+    }
+
+    const nameMap = Object.fromEntries(profiles.map(p => [p.symbol, p.name]));
+
+    // Update names in quotes
+    validQuotes.forEach(q => {
+      if (nameMap[q.symbol]) q.name = nameMap[q.symbol];
+    });
+
+    // Sort by absolute change percent to get most active
+    const sortedByActivity = [...validQuotes].sort((a, b) =>
+      Math.abs(b.changePercent) - Math.abs(a.changePercent)
+    );
+
+    // Trending = top 10 most active
+    const trending = sortedByActivity.slice(0, 10).map(q => ({
+      symbol: q.symbol,
+      name: q.name,
+      price: q.price,
+      change: q.change,
+      changePercent: q.changePercent
+    }));
+
+    // Gainers = top 5 positive change
+    const gainers = [...validQuotes]
+      .filter(q => q.changePercent > 0)
+      .sort((a, b) => b.changePercent - a.changePercent)
+      .slice(0, 5)
+      .map(q => ({
+        symbol: q.symbol,
+        name: q.name,
+        price: q.price,
+        change: q.change,
+        changePercent: q.changePercent
+      }));
+
+    // Losers = top 5 negative change
+    const losers = [...validQuotes]
+      .filter(q => q.changePercent < 0)
+      .sort((a, b) => a.changePercent - b.changePercent)
+      .slice(0, 5)
+      .map(q => ({
+        symbol: q.symbol,
+        name: q.name,
+        price: q.price,
+        change: q.change,
+        changePercent: q.changePercent
+      }));
 
     const responseData = {
       trending,
@@ -1317,6 +1406,7 @@ app.get("/api/market/overview", isAuthenticated, async (req, res) => {
     // Update cache
     cache.marketOverview = { data: responseData, timestamp: now };
 
+    console.log(`[MarketOverview] Fetched ${validQuotes.length} quotes, ${trending.length} trending, ${gainers.length} gainers, ${losers.length} losers`);
     res.json(responseData);
   } catch (err) {
     console.error("Error fetching market overview:", err);
