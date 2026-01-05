@@ -22,6 +22,13 @@ import _YahooFinance from 'yahoo-finance2';
 const yahooFinance = new _YahooFinance({ suppressNotices: ['yahooSurvey'] });
 console.log('YahooFinance instance keys:', Object.keys(yahooFinance));
 
+// Simple in-memory cache to avoid hitting Yahoo Finance rate limits
+const cache = {
+  marketOverview: { data: null, timestamp: 0 },
+  news: { data: null, timestamp: 0 }
+};
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const isProduction = process.env.NODE_ENV === 'production';
@@ -723,6 +730,14 @@ app.get("/api/stock/:symbol", isAuthenticated, async (req, res) => {
 
 app.get("/api/news", isAuthenticated, async (req, res) => {
   try {
+    // Check cache first
+    const now = Date.now();
+    if (cache.news.data && (now - cache.news.timestamp) < CACHE_DURATION) {
+      console.log('[News] Serving from cache');
+      return res.json(cache.news.data);
+    }
+
+    console.log('[News] Cache miss, fetching from Yahoo Finance...');
     const result = await yahooFinance.search("financial news", { newsCount: 20 });
 
     // Transform Yahoo Finance results to match the structure expected by the frontend (FinnHub format)
@@ -746,9 +761,17 @@ app.get("/api/news", isAuthenticated, async (req, res) => {
       };
     });
 
+    // Update cache
+    cache.news = { data: news, timestamp: now };
+
     res.json(news);
   } catch (err) {
     console.error("Error fetching news:", err);
+    // Return cached data if available, even if stale
+    if (cache.news.data) {
+      console.log('[News] Error occurred, serving stale cache');
+      return res.json(cache.news.data);
+    }
     res.status(500).json({ error: "Failed to fetch news" });
   }
 });
@@ -1200,38 +1223,52 @@ passport.use("local",
     })
 );
 
-passport.use("google", new GoogleStrategy({
-  clientID: process.env.GOOGLE_CLIENT_ID,
-  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: process.env.GOOGLE_CALLBACK_URL,
-  userProfileURL: "https://www.googleapis.com/oauth2/v3/userinfo",
-}, async (accessToken, refreshToken, profile, cb) => {
-  try {
-    const email = profile.emails[0].value;
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_CALLBACK_URL) {
+  passport.use("google", new GoogleStrategy({
+    clientID: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    callbackURL: process.env.GOOGLE_CALLBACK_URL,
+    userProfileURL: "https://www.googleapis.com/oauth2/v3/userinfo",
+  }, async (accessToken, refreshToken, profile, cb) => {
+    try {
+      const email = profile.emails[0].value;
 
-    const result = await db.query(
-      "SELECT * FROM users WHERE email = $1",
-      [email]
-    );
-
-    if (result.rows.length === 0) {
-      const insert = await db.query(
-        `INSERT INTO users (email, password_hash, first_name)
-         VALUES ($1, $2, $3) RETURNING *`,
-        [email, `google_${email}`, profile.name.givenName]
+      const result = await db.query(
+        "SELECT * FROM users WHERE email = $1",
+        [email]
       );
-      cb(null, insert.rows[0]);
-    } else {
-      cb(null, result.rows[0]);
+
+      if (result.rows.length === 0) {
+        const insert = await db.query(
+          `INSERT INTO users (email, password_hash, first_name)
+           VALUES ($1, $2, $3) RETURNING *`,
+          [email, `google_${email}`, profile.name.givenName]
+        );
+        cb(null, insert.rows[0]);
+      } else {
+        cb(null, result.rows[0]);
+      }
+    } catch (err) {
+      cb(err);
     }
-  } catch (err) {
-    cb(err);
-  }
-}));
+  }));
+  console.log("Google OAuth initialized");
+} else {
+  console.log("Google OAuth credentials missing. Google login will not work.");
+}
 
 // Market Overview Endpoint
 app.get("/api/market/overview", isAuthenticated, async (req, res) => {
   try {
+    // Check cache first
+    const now = Date.now();
+    if (cache.marketOverview.data && (now - cache.marketOverview.timestamp) < CACHE_DURATION) {
+      console.log('[MarketOverview] Serving from cache');
+      return res.json(cache.marketOverview.data);
+    }
+
+    console.log('[MarketOverview] Cache miss, fetching from Yahoo Finance...');
+
     // 1. Get Trending Symbols from Yahoo Finance
     // trendingSymbols('US') only returns 5, which is not enough.
     // Using 'most_actives' screener as a better proxy for functional "trending" list.
@@ -1271,13 +1308,23 @@ app.get("/api/market/overview", isAuthenticated, async (req, res) => {
     const gainers = gainersResult.quotes.map(formatMover);
     const losers = losersResult.quotes.map(formatMover);
 
-    res.json({
+    const responseData = {
       trending,
       gainers,
       losers
-    });
+    };
+
+    // Update cache
+    cache.marketOverview = { data: responseData, timestamp: now };
+
+    res.json(responseData);
   } catch (err) {
     console.error("Error fetching market overview:", err);
+    // Return cached data if available, even if stale
+    if (cache.marketOverview.data) {
+      console.log('[MarketOverview] Error occurred, serving stale cache');
+      return res.json(cache.marketOverview.data);
+    }
     res.status(500).json({ error: "Failed to fetch market data" });
   }
 });
