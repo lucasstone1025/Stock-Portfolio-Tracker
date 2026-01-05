@@ -1,31 +1,19 @@
-# Stock Portfolio Tracker
+# Server
 
-This project is organized as a monorepo with the following structure:
+Express.js backend for the TrendTracker application.
 
-- **`client/`**: React frontend application.
-- **`server/`**: Node.js/Express backend API.
-- **`_archive/`**: Legacy files and backups.
+See the [main README](../README.md) for full documentation.
 
-## Getting Started
+## Quick Start
 
-### Backend
-Navigate to the `server` directory:
 ```bash
-cd server
 npm install
+pip install -r requirements.txt
 npm start
 ```
 
-### Frontend
-Navigate to the `client` directory:
-```bash
-cd client
-npm install
-npm run dev
-```
+## Scripts
 
-### Docker
-Run the application using Docker Compose from the root:
-```bash
-docker-compose up --build
-```
+- `npm start` - Start the server with nodemon
+- `node index.js` - Starts the server with node
+- `npm run dev` - Development mode

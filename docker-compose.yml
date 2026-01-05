@@ -16,9 +16,9 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: lucasstone
-      POSTGRES_PASSWORD: Mackenzie1
-      POSTGRES_DB: trendtracker
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password required}
+      POSTGRES_DB: ${POSTGRES_DB:-trendtracker}
     volumes:
       - pgdata:/var/lib/postgresql/data
 
