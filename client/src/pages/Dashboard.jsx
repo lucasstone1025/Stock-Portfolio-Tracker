@@ -99,6 +99,14 @@ function Dashboard() {
                     color="#8b5cf6" // Purple
                     icon="🚀"
                 />
+
+                <ActionRow
+                    title="FAQ & Help"
+                    description="Learn about technical indicators and how to interpret analytics."
+                    link="/faq"
+                    color="#06b6d4" // Cyan
+                    icon="❓"
+                />
             </div>
         </div>
     );

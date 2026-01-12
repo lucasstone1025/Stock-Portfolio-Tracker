@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import CreateAlertModal from '../components/CreateAlertModal';
+import StockAnalytics from '../components/StockAnalytics';
 
 function StockDetails() {
     const { symbol } = useParams();
@@ -15,6 +16,10 @@ function StockDetails() {
 
     const [news, setNews] = useState([]);
     const [newsLoading, setNewsLoading] = useState(true);
+
+    const [analytics, setAnalytics] = useState(null);
+    const [analyticsLoading, setAnalyticsLoading] = useState(true);
+    const [analyticsError, setAnalyticsError] = useState(null);
 
     useEffect(() => {
         // Fetch Stock Details
@@ -76,6 +81,20 @@ function StockDetails() {
             .catch(err => {
                 console.error(err);
                 setChartLoading(false);
+            });
+
+        // Fetch Analytics Data
+        setAnalyticsLoading(true);
+        setAnalyticsError(null);
+        axios.get(`/api/analytics/${symbol}`, { params: { period } })
+            .then(res => {
+                setAnalytics(res.data);
+                setAnalyticsLoading(false);
+            })
+            .catch(err => {
+                console.error("Error fetching analytics:", err);
+                setAnalyticsError(err.response?.data?.error || "Failed to load analytics");
+                setAnalyticsLoading(false);
             });
     }, [symbol, period]);
 
@@ -145,38 +164,48 @@ function StockDetails() {
                 />
             )}
 
-            <div className="card glass-card" style={{ marginBottom: '2rem' }}>
-                <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem', justifyContent: 'flex-end' }}>
-                    {['1d', '1w', '1m', '3m', '6m'].map(p => (
-                        <button
-                            key={p}
-                            onClick={() => setPeriod(p)}
-                            className={`btn ${period === p ? 'btn-primary' : 'btn-outline'}`}
-                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.9rem' }}
-                        >
-                            {p.toUpperCase()}
-                        </button>
-                    ))}
+            <div className="chart-analytics-container" style={{ marginBottom: '2rem' }}>
+                <div className="card glass-card">
+                    <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem', justifyContent: 'flex-end' }}>
+                        {['1d', '1w', '1m', '3m', '6m'].map(p => (
+                            <button
+                                key={p}
+                                onClick={() => setPeriod(p)}
+                                className={`btn ${period === p ? 'btn-primary' : 'btn-outline'}`}
+                                style={{ padding: '0.25rem 0.5rem', fontSize: '0.9rem' }}
+                            >
+                                {p.toUpperCase()}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div style={{ height: '400px', width: '100%' }}>
+                        {chartLoading ? (
+                            <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center' }}>Loading Chart...</div>
+                        ) : (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={chartData}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                                    <XAxis dataKey="date" stroke="var(--text-muted)" tick={{ fontSize: 12 }} minTickGap={30} />
+                                    <YAxis domain={['auto', 'auto']} stroke="var(--text-muted)" tick={{ fontSize: 12 }} />
+                                    <Tooltip
+                                        contentStyle={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
+                                        itemStyle={{ color: 'var(--primary)' }}
+                                        formatter={(value) => [`$${value}`, 'Price']}
+                                    />
+                                    <Line type="monotone" dataKey="price" stroke="var(--success)" strokeWidth={2} dot={false} activeDot={{ r: 6 }} />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        )}
+                    </div>
                 </div>
 
-                <div style={{ height: '400px', width: '100%' }}>
-                    {chartLoading ? (
-                        <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center' }}>Loading Chart...</div>
-                    ) : (
-                        <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={chartData}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                                <XAxis dataKey="date" stroke="var(--text-muted)" tick={{ fontSize: 12 }} minTickGap={30} />
-                                <YAxis domain={['auto', 'auto']} stroke="var(--text-muted)" tick={{ fontSize: 12 }} />
-                                <Tooltip
-                                    contentStyle={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-main)' }}
-                                    itemStyle={{ color: 'var(--primary)' }}
-                                    formatter={(value) => [`$${value}`, 'Price']}
-                                />
-                                <Line type="monotone" dataKey="price" stroke="var(--success)" strokeWidth={2} dot={false} activeDot={{ r: 6 }} />
-                            </LineChart>
-                        </ResponsiveContainer>
-                    )}
+                <div className="analytics-wrapper">
+                    <StockAnalytics 
+                        analytics={analytics} 
+                        loading={analyticsLoading} 
+                        error={analyticsError}
+                    />
                 </div>
             </div>
 

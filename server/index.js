@@ -23,10 +23,12 @@ import cors from 'cors';
 const cache = {
   marketOverview: { data: null, timestamp: 0 },
   news: { data: null, timestamp: 0 },
-  stockNews: {} // Per-symbol cache: { AAPL: { data: [...], timestamp: 123 }, ... }
+  stockNews: {}, // Per-symbol cache: { AAPL: { data: [...], timestamp: 123 }, ... }
+  analytics: {} // Per-symbol-period cache: { "AAPL:1w": { data: {...}, timestamp: 123 }, ... }
 };
 const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes in milliseconds
 const STOCK_NEWS_CACHE_DURATION = 15 * 60 * 1000; // 15 minutes for individual stock news
+const ANALYTICS_CACHE_DURATION = 15 * 60 * 1000; // 15 minutes for analytics
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -537,6 +539,109 @@ app.get("/api/chart/:symbol", isAuthenticated, async (req, res) => {
     } else {
       console.error(`Python script error: ${errorOutput}`);
       if (!res.headersSent) res.status(500).json({ error: `Python script exited with code ${code}: ${errorOutput}` });
+    }
+  });
+});
+
+app.get("/api/analytics/:symbol", isAuthenticated, async (req, res) => {
+  const ticker = req.params.symbol.toUpperCase();
+  const period = req.query.period || "1w"; // default to 1 week
+
+  // validate period
+  const validPeriods = ["1h", "1d", "1w", "1m", "3m", "6m"];
+  if (!validPeriods.includes(period)) {
+    return res.status(400).json({ error: "Invalid period" });
+  }
+
+  // Check cache first
+  const cacheKey = `${ticker}:${period}`;
+  const now = Date.now();
+  if (cache.analytics[cacheKey] && (now - cache.analytics[cacheKey].timestamp) < ANALYTICS_CACHE_DURATION) {
+    console.log(`[Analytics] Serving ${cacheKey} from cache`);
+    return res.json(cache.analytics[cacheKey].data);
+  }
+
+  let scriptPath;
+  if (process.env.NODE_ENV == "production") {
+    scriptPath = process.env.ANALYTICS_SCRIPT_PATH || path.join(__dirname, 'scripts', 'stock_analytics.py');
+  } else {
+    scriptPath = path.join(__dirname, 'scripts', 'stock_analytics.py');
+  }
+
+  // Path to python script
+  const pythonPath = process.env.PYTHON_PATH || 'python3';
+
+  console.log('[Analytics] Script path:', scriptPath);
+  console.log('[Analytics] Python path:', pythonPath);
+  console.log('[Analytics] period:', period);
+
+  // Check if script exists
+  if (!fs.existsSync(scriptPath)) {
+    console.log('[Analytics] ERROR: Python script not found!');
+    return res.status(500).json({ error: 'Analytics script not found' });
+  }
+
+  let python;
+  try {
+    python = spawn(pythonPath, [scriptPath, ticker, period]);
+  } catch (err) {
+    console.log('[Analytics] ERROR: Failed to spawn Python:', err);
+    return res.status(500).json({ error: 'Failed to start Python' });
+  }
+
+  let stdoutData = '';
+  let errorOutput = '';
+
+  python.stdout.on('data', (data) => {
+    stdoutData += data.toString();
+    console.log('[Analytics] Python stdout:', data.toString());
+  });
+
+  python.stderr.on('data', (data) => {
+    errorOutput += data.toString();
+    console.log('[Analytics] Python stderr:', data.toString());
+  });
+
+  // Handle spawn errors
+  python.on('error', (error) => {
+    console.log('[Analytics] Spawn error:', error);
+    if (!res.headersSent) {
+      return res.status(500).json({ error: `Failed to run Python: ${error.message}` });
+    }
+  });
+
+  python.on('close', (code) => {
+    console.log('[Analytics] Python exited with code:', code);
+    if (res.headersSent) return;
+
+    if (code === 0) {
+      const dataPath = path.join(__dirname, 'public', 'data', `${ticker.toLowerCase()}_${period}_analytics.json`);
+      console.log('[Analytics] Looking for JSON at:', dataPath);
+
+      try {
+        const analyticsData = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+        console.log('[Analytics] Success! Sending data...');
+        
+        // Update cache
+        cache.analytics[cacheKey] = { data: analyticsData, timestamp: now };
+        
+        res.json(analyticsData);
+
+        fs.unlink(dataPath, (err) => {
+          if (err) {
+            console.log('[Analytics] ERROR deleting JSON file:', err);
+          } else {
+            console.log('[Analytics] Temporary JSON file deleted:', dataPath);
+          }
+        });
+
+      } catch (err) {
+        console.log('[Analytics] ERROR reading JSON:', err);
+        if (!res.headersSent) res.status(500).json({ error: `Failed to read analytics data for ${ticker}.` });
+      }
+    } else {
+      console.error(`[Analytics] Python script error: ${errorOutput}`);
+      if (!res.headersSent) res.status(500).json({ error: `Analytics script exited with code ${code}: ${errorOutput}` });
     }
   });
 });

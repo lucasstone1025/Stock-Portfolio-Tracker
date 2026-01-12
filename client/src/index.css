@@ -147,6 +147,35 @@ button {
   .md\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
+/* Chart and Analytics Layout */
+.chart-analytics-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.analytics-wrapper {
+  width: 100%;
+}
+
+@media (min-width: 1024px) {
+  .chart-analytics-container {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 1.5rem;
+  }
+
+  .chart-analytics-container > .card {
+    flex: 1;
+    margin-bottom: 0;
+  }
+
+  .analytics-wrapper {
+    width: 400px;
+    flex-shrink: 0;
+  }
+}
+
 /* Navbar */
 .navbar {
   background-color: var(--bg-card);
