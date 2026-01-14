@@ -25,6 +25,7 @@ function Navbar() {
                     <Link to="/watchlist" className={`nav-link ${isActive('/watchlist')}`} onClick={closeMenu}>Watchlist</Link>
                     <Link to="/find-stocks" className={`nav-link ${isActive('/find-stocks')}`} onClick={closeMenu}>Discover</Link>
                     <Link to="/alerts" className={`nav-link ${isActive('/alerts')}`} onClick={closeMenu}>Alerts</Link>
+                    <Link to="/settings" className={`nav-link ${isActive('/settings')}`} onClick={closeMenu}>Settings</Link>
                     <button onClick={() => { closeMenu(); logout(); }} className="nav-link" style={{ background: 'none' }}>Logout</button>
                 </div>
             </div>

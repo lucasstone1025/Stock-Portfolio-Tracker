@@ -30,6 +30,10 @@ const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes in milliseconds
 const STOCK_NEWS_CACHE_DURATION = 15 * 60 * 1000; // 15 minutes for individual stock news
 const ANALYTICS_CACHE_DURATION = 15 * 60 * 1000; // 15 minutes for analytics
 
+// Phone verification codes cache: { userId: { code: '123456', phone: '+1234567890', expiresAt: timestamp } }
+const phoneVerificationCodes = {};
+const VERIFICATION_CODE_EXPIRY = 10 * 60 * 1000; // 10 minutes
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const isProduction = process.env.NODE_ENV === 'production';
@@ -1094,6 +1098,134 @@ app.post("/api/watchlist/delete", isAuthenticated, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to remove from watchlist" });
+  }
+});
+
+// Settings endpoints
+app.get("/api/settings", isAuthenticated, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      "SELECT id, email, first_name, phone FROM users WHERE id = $1",
+      [req.user.id]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    const user = rows[0];
+    res.json({
+      email: user.email,
+      firstName: user.first_name,
+      phone: user.phone || null
+    });
+  } catch (err) {
+    console.error("Error fetching settings:", err);
+    res.status(500).json({ error: "Failed to fetch settings" });
+  }
+});
+
+// Cleanup expired verification codes
+function cleanupExpiredCodes() {
+  const now = Date.now();
+  Object.keys(phoneVerificationCodes).forEach(userId => {
+    if (phoneVerificationCodes[userId].expiresAt < now) {
+      delete phoneVerificationCodes[userId];
+    }
+  });
+}
+
+app.post("/api/settings/phone/send-code", isAuthenticated, async (req, res) => {
+  const { phone } = req.body;
+  const userId = req.user.id;
+
+  if (!phone) {
+    return res.status(400).json({ error: "Phone number is required" });
+  }
+
+  // Cleanup expired codes
+  cleanupExpiredCodes();
+
+  // Validate phone number format (basic validation)
+  const cleanedPhone = phone.replace(/[\s\-\(\)]/g, '');
+  const phoneRegex = /^\+?[1-9]\d{1,14}$/;
+  if (!phoneRegex.test(cleanedPhone)) {
+    return res.status(400).json({ error: "Invalid phone number format. Please include country code (e.g., +1 for US)" });
+  }
+
+  // Format phone number (ensure it starts with +)
+  const formattedPhone = cleanedPhone.startsWith('+') ? cleanedPhone : `+${cleanedPhone}`;
+
+  if (!twilioClient) {
+    return res.status(500).json({ error: "SMS service is not available" });
+  }
+
+  try {
+    // Generate 6-digit verification code
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Store code with expiration
+    phoneVerificationCodes[userId] = {
+      code,
+      phone: formattedPhone,
+      expiresAt: Date.now() + VERIFICATION_CODE_EXPIRY
+    };
+
+    // Send SMS via Twilio
+    await twilioClient.messages.create({
+      body: `Your TrendTracker verification code is: ${code}. This code expires in 10 minutes.`,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: formattedPhone
+    });
+
+    console.log(`[Phone Verification] Code sent to ${formattedPhone} for user ${userId}`);
+    res.json({ message: "Verification code sent successfully" });
+  } catch (err) {
+    console.error("Error sending verification code:", err);
+    const errorMessage = err.message || "Failed to send verification code";
+    res.status(500).json({ error: `Failed to send verification code: ${errorMessage}. Please check the phone number and try again.` });
+  }
+});
+
+app.post("/api/settings/phone/verify", isAuthenticated, async (req, res) => {
+  const { code } = req.body;
+  const userId = req.user.id;
+
+  if (!code) {
+    return res.status(400).json({ error: "Verification code is required" });
+  }
+
+  // Cleanup expired codes
+  cleanupExpiredCodes();
+
+  const storedData = phoneVerificationCodes[userId];
+
+  if (!storedData) {
+    return res.status(400).json({ error: "No verification code found. Please request a new code." });
+  }
+
+  if (Date.now() > storedData.expiresAt) {
+    delete phoneVerificationCodes[userId];
+    return res.status(400).json({ error: "Verification code has expired. Please request a new code." });
+  }
+
+  if (storedData.code !== code) {
+    return res.status(400).json({ error: "Invalid verification code" });
+  }
+
+  try {
+    // Update phone number in database
+    await db.query(
+      "UPDATE users SET phone = $1, is_phone_verified = TRUE WHERE id = $2",
+      [storedData.phone, userId]
+    );
+
+    // Clear verification code
+    delete phoneVerificationCodes[userId];
+
+    console.log(`[Phone Verification] Phone number verified and updated for user ${userId}`);
+    res.json({ message: "Phone number verified and updated successfully", phone: storedData.phone });
+  } catch (err) {
+    console.error("Error updating phone number:", err);
+    res.status(500).json({ error: "Failed to update phone number" });
   }
 });
 
