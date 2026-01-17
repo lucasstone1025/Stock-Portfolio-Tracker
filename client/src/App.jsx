@@ -10,6 +10,9 @@ import Search from './pages/Search';
 import FindStocks from './pages/FindStocks';
 import FAQ from './pages/FAQ';
 import Settings from './pages/Settings';
+import Budget from './pages/Budget';
+import Transactions from './pages/Transactions';
+import Categories from './pages/Categories';
 import Navbar from './components/Navbar';
 
 const PrivateRoute = ({ children }) => {
@@ -48,6 +51,9 @@ function App() {
             <Route path="/find-stocks" element={<PrivateRoute><FindStocks /></PrivateRoute>} />
             <Route path="/faq" element={<PrivateRoute><FAQ /></PrivateRoute>} />
             <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
+            <Route path="/budget" element={<PrivateRoute><Budget /></PrivateRoute>} />
+            <Route path="/transactions" element={<PrivateRoute><Transactions /></PrivateRoute>} />
+            <Route path="/categories" element={<PrivateRoute><Categories /></PrivateRoute>} />
             <Route path="/stock/:symbol" element={<PrivateRoute><StockDetails /></PrivateRoute>} />
             {/* Fallback */}
             <Route path="*" element={<Navigate to="/" />} />

@@ -2,14 +2,28 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 
+const formatCurrency = (value) => {
+    return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+    }).format(value);
+};
+
 function Dashboard() {
     const [data, setData] = useState({ firstName: '', watchlistCount: 0, alertsCount: 0 });
+    const [budgetSummary, setBudgetSummary] = useState(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        axios.get('/api/dashboard')
-            .then(res => {
-                setData(res.data);
+        Promise.all([
+            axios.get('/api/dashboard'),
+            axios.get('/api/budgets/summary').catch(() => ({ data: null }))
+        ])
+            .then(([dashRes, budgetRes]) => {
+                setData(dashRes.data);
+                setBudgetSummary(budgetRes.data);
                 setLoading(false);
             })
             .catch(err => {
@@ -83,6 +97,60 @@ function Dashboard() {
                     link="/alerts"
                     color="#f59e0b" // Amber/Orange
                 />
+
+                {/* Budget Summary Card */}
+                <Link to="/budget" style={{ textDecoration: 'none' }}>
+                    <div className="card glass-card hover-card" style={{
+                        marginBottom: '1.5rem',
+                        borderLeft: '5px solid #10b981',
+                        padding: '2rem'
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <div>
+                                <h2 style={{ margin: '0 0 0.5rem 0', fontSize: '1.8rem' }}>Budget & Spending</h2>
+                                <p className="text-muted" style={{ margin: 0, fontSize: '1.1rem' }}>
+                                    Track your spending and manage your budget
+                                </p>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                                {budgetSummary ? (
+                                    <>
+                                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: budgetSummary.netSavings >= 0 ? '#10b981' : '#ef4444' }}>
+                                            {formatCurrency(budgetSummary.netSavings)}
+                                        </div>
+                                        <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Net This Month</div>
+                                        {budgetSummary.totalBudget > 0 && (
+                                            <div style={{ marginTop: '0.5rem' }}>
+                                                <div style={{
+                                                    width: '120px',
+                                                    height: '6px',
+                                                    backgroundColor: 'var(--border)',
+                                                    borderRadius: '3px',
+                                                    overflow: 'hidden'
+                                                }}>
+                                                    <div style={{
+                                                        height: '100%',
+                                                        width: `${Math.min(budgetSummary.percentUsed, 100)}%`,
+                                                        backgroundColor: budgetSummary.percentUsed > 100 ? '#ef4444' : budgetSummary.percentUsed > 80 ? '#f59e0b' : '#10b981',
+                                                        borderRadius: '3px'
+                                                    }} />
+                                                </div>
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                                                    {budgetSummary.percentUsed.toFixed(0)}% of budget used
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
+                                ) : (
+                                    <>
+                                        <div style={{ fontSize: '2rem' }}>💰</div>
+                                        <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Get Started</div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </Link>
 
                 <ActionRow
                     title="Search Stocks"

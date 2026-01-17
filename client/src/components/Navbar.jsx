@@ -23,6 +23,8 @@ function Navbar() {
                 <div className={`nav-links ${isOpen ? 'open' : ''}`}>
                     <Link to="/dashboard" className={`nav-link ${isActive('/dashboard')}`} onClick={closeMenu}>Dashboard</Link>
                     <Link to="/watchlist" className={`nav-link ${isActive('/watchlist')}`} onClick={closeMenu}>Watchlist</Link>
+                    <Link to="/budget" className={`nav-link ${isActive('/budget')}`} onClick={closeMenu}>Budget</Link>
+                    <Link to="/transactions" className={`nav-link ${isActive('/transactions')}`} onClick={closeMenu}>Transactions</Link>
                     <Link to="/find-stocks" className={`nav-link ${isActive('/find-stocks')}`} onClick={closeMenu}>Discover</Link>
                     <Link to="/alerts" className={`nav-link ${isActive('/alerts')}`} onClick={closeMenu}>Alerts</Link>
                     <Link to="/settings" className={`nav-link ${isActive('/settings')}`} onClick={closeMenu}>Settings</Link>

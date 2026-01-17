@@ -19,6 +19,22 @@ import cron from 'node-cron';
 import { spawn } from 'child_process';
 import cors from 'cors';
 
+// Budget management imports
+import {
+  helmetMiddleware,
+  generalLimiter,
+  authLimiter,
+  plaidLimiter,
+  syncLimiter,
+  handleValidationErrors,
+  validators,
+  createAuthorizationMiddleware
+} from './middleware/security.js';
+import * as plaidService from './services/plaidService.js';
+import * as transactionSyncService from './services/transactionSyncService.js';
+import * as budgetCalculationService from './services/budgetCalculationService.js';
+import * as auditLogService from './services/auditLogService.js';
+
 // Simple in-memory cache to avoid hitting API rate limits
 const cache = {
   marketOverview: { data: null, timestamp: 0 },
@@ -61,6 +77,9 @@ db.on('connect', () => {
   console.log('Connected to the database');
 });
 
+// Initialize authorization middleware after db is created
+const authMiddleware = createAuthorizationMiddleware(db);
+
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -68,15 +87,6 @@ const transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASS
   }
 })
-
-
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(express.json());
-app.use(express.static("public"));
-app.use(cors({
-  origin: isProduction ? "https://trendtracker.co" : "http://localhost:5173",
-  credentials: true
-}));
 
 app.use(session({
   store: new PgSession({
@@ -368,6 +378,100 @@ async function refreshAllStockData() {
 cron.schedule('*/10 * * * *', refreshAllStockData);
 
 console.log('Automated stock refresh job scheduled to run every 10 minutes.');
+
+// Schedule daily transaction sync at 6 AM
+cron.schedule('0 6 * * *', async () => {
+  console.log('[TransactionSync] Starting daily sync...');
+  try {
+    const result = await transactionSyncService.syncAllTransactions(db);
+    console.log(`[TransactionSync] Daily sync complete: ${result.success}/${result.total} accounts synced`);
+  } catch (err) {
+    console.error('[TransactionSync] Daily sync failed:', err.message);
+  }
+});
+
+console.log('Daily transaction sync scheduled for 6 AM.');
+
+// Schedule budget alerts check at 8 AM daily
+cron.schedule('0 8 * * *', async () => {
+  console.log('[BudgetAlerts] Checking budget alerts...');
+  try {
+    // Get all users with active budgets
+    const usersResult = await db.query(`
+      SELECT DISTINCT u.id, u.email, u.phone, u.first_name
+      FROM users u
+      JOIN budgets b ON b.user_id = u.id AND b.is_active = TRUE
+    `);
+    
+    for (const user of usersResult.rows) {
+      try {
+        const alerts = await budgetCalculationService.checkBudgetAlerts(db, user.id);
+        
+        if (alerts.length > 0) {
+          // Build notification message
+          const overBudget = alerts.filter(a => a.type === 'over_budget');
+          const approaching = alerts.filter(a => a.type === 'approaching_limit');
+          
+          let message = `Hi ${user.first_name || 'there'},\n\n`;
+          message += `TrendTracker Budget Alert:\n\n`;
+          
+          if (overBudget.length > 0) {
+            message += `⚠️ OVER BUDGET:\n`;
+            overBudget.forEach(a => {
+              message += `  • ${a.categoryName}: $${a.spent.toFixed(2)} spent (budget: $${a.budgetAmount.toFixed(2)})\n`;
+            });
+            message += '\n';
+          }
+          
+          if (approaching.length > 0) {
+            message += `⏰ APPROACHING LIMIT:\n`;
+            approaching.forEach(a => {
+              message += `  • ${a.categoryName}: ${a.percentUsed.toFixed(0)}% used ($${a.spent.toFixed(2)} of $${a.budgetAmount.toFixed(2)})\n`;
+            });
+          }
+          
+          message += `\nView your budget: ${isProduction ? 'https://trendtracker.co/budget' : 'http://localhost:5173/budget'}`;
+          
+          // Send email notification
+          await transporter.sendMail({
+            from: '"TrendTracker" <' + process.env.EMAIL_USER + '>',
+            to: user.email,
+            subject: `Budget Alert: ${overBudget.length > 0 ? 'Over budget' : 'Approaching limit'}`,
+            text: message
+          });
+          
+          console.log(`[BudgetAlerts] Sent budget alert to ${user.email}`);
+          
+          // Send SMS if phone is available
+          if (user.phone && twilioClient) {
+            const smsMessage = overBudget.length > 0
+              ? `TrendTracker: You're over budget in ${overBudget.length} categor${overBudget.length === 1 ? 'y' : 'ies'}. Check your app for details.`
+              : `TrendTracker: You're approaching your budget limit in ${approaching.length} categor${approaching.length === 1 ? 'y' : 'ies'}. Check your app for details.`;
+            
+            try {
+              await twilioClient.messages.create({
+                body: smsMessage,
+                from: process.env.TWILIO_PHONE_NUMBER,
+                to: user.phone
+              });
+              console.log(`[BudgetAlerts] Sent SMS alert to ${user.phone}`);
+            } catch (smsErr) {
+              console.error(`[BudgetAlerts] Failed to send SMS to ${user.phone}:`, smsErr.message);
+            }
+          }
+        }
+      } catch (userErr) {
+        console.error(`[BudgetAlerts] Error checking alerts for user ${user.id}:`, userErr.message);
+      }
+    }
+    
+    console.log('[BudgetAlerts] Budget alerts check completed.');
+  } catch (err) {
+    console.error('[BudgetAlerts] Failed to check budget alerts:', err.message);
+  }
+});
+
+console.log('Daily budget alerts scheduled for 8 AM.');
 
 function capitalizeFirst(name) {
   if (!name) return "";
@@ -1228,6 +1332,724 @@ app.post("/api/settings/phone/verify", isAuthenticated, async (req, res) => {
     res.status(500).json({ error: "Failed to update phone number" });
   }
 });
+
+// ==================== BUDGET MANAGEMENT API ROUTES ====================
+
+// ----- Plaid Routes -----
+
+app.post("/api/plaid/create-link-token", isAuthenticated, plaidLimiter, async (req, res) => {
+  try {
+    if (!plaidService.isPlaidConfigured()) {
+      return res.status(503).json({ error: "Banking services are not configured" });
+    }
+    
+    const linkToken = await plaidService.createLinkToken(req.user.id, req.user.id.toString());
+    res.json({ link_token: linkToken.link_token });
+  } catch (err) {
+    console.error("[Plaid] Error creating link token:", err);
+    res.status(500).json({ error: "Failed to initialize bank connection" });
+  }
+});
+
+app.post("/api/plaid/exchange-public-token", isAuthenticated, plaidLimiter, async (req, res) => {
+  const { public_token, metadata } = req.body;
+  
+  if (!public_token) {
+    return res.status(400).json({ error: "Public token is required" });
+  }
+  
+  try {
+    // Exchange public token for access token
+    const { accessToken, itemId } = await plaidService.exchangePublicToken(public_token);
+    
+    // Encrypt the access token
+    const encryptedToken = plaidService.encryptAccessToken(accessToken);
+    
+    // Get account details
+    const accountsResponse = await plaidService.getAccounts(encryptedToken);
+    const accounts = accountsResponse.accounts;
+    const institutionId = accountsResponse.item.institution_id;
+    
+    // Get institution name
+    let institutionName = "Unknown Bank";
+    try {
+      const institution = await plaidService.getInstitution(institutionId);
+      institutionName = institution.name;
+    } catch (e) {
+      console.log("[Plaid] Could not fetch institution name");
+    }
+    
+    // Save accounts to database
+    for (const account of accounts) {
+      await db.query(`
+        INSERT INTO bank_accounts (
+          user_id, plaid_account_id, plaid_item_id, institution_name,
+          account_name, account_type, account_subtype, mask, access_token
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (user_id, plaid_account_id) DO UPDATE SET
+          access_token = EXCLUDED.access_token,
+          is_active = TRUE,
+          updated_at = CURRENT_TIMESTAMP
+      `, [
+        req.user.id,
+        account.account_id,
+        itemId,
+        institutionName,
+        account.name,
+        account.type,
+        account.subtype,
+        account.mask,
+        encryptedToken
+      ]);
+    }
+    
+    // Log the connection
+    await auditLogService.logBankConnection(db, req, req.user.id, institutionName, true);
+    
+    // Trigger initial transaction sync
+    try {
+      const bankAccounts = await db.query(
+        `SELECT * FROM bank_accounts WHERE user_id = $1 AND plaid_item_id = $2`,
+        [req.user.id, itemId]
+      );
+      
+      for (const account of bankAccounts.rows) {
+        await transactionSyncService.syncAccountTransactions(db, account);
+      }
+    } catch (syncErr) {
+      console.error("[Plaid] Initial sync failed:", syncErr.message);
+    }
+    
+    res.json({ 
+      message: "Bank account connected successfully",
+      accounts: accounts.map(a => ({
+        id: a.account_id,
+        name: a.name,
+        type: a.type,
+        subtype: a.subtype,
+        mask: a.mask
+      }))
+    });
+  } catch (err) {
+    console.error("[Plaid] Error exchanging token:", err);
+    await auditLogService.logBankConnection(db, req, req.user.id, "Unknown", false);
+    res.status(500).json({ error: "Failed to connect bank account" });
+  }
+});
+
+app.get("/api/plaid/accounts", isAuthenticated, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT id, institution_name, account_name, account_type, account_subtype, mask, is_active, created_at
+      FROM bank_accounts
+      WHERE user_id = $1
+      ORDER BY created_at DESC
+    `, [req.user.id]);
+    
+    res.json({ accounts: result.rows });
+  } catch (err) {
+    console.error("[Plaid] Error fetching accounts:", err);
+    res.status(500).json({ error: "Failed to fetch accounts" });
+  }
+});
+
+app.post("/api/plaid/accounts/:id/disconnect", isAuthenticated, async (req, res) => {
+  const accountId = req.params.id;
+  
+  try {
+    // Check ownership
+    const accountResult = await db.query(
+      `SELECT * FROM bank_accounts WHERE id = $1 AND user_id = $2`,
+      [accountId, req.user.id]
+    );
+    
+    if (accountResult.rows.length === 0) {
+      return res.status(404).json({ error: "Account not found" });
+    }
+    
+    const account = accountResult.rows[0];
+    
+    // Try to remove from Plaid (may fail if already disconnected)
+    try {
+      await plaidService.removeItem(account.access_token);
+    } catch (e) {
+      console.log("[Plaid] Item may already be disconnected:", e.message);
+    }
+    
+    // Mark as inactive in our database
+    await db.query(
+      `UPDATE bank_accounts SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+      [accountId]
+    );
+    
+    // Log disconnection
+    await auditLogService.logBankDisconnection(db, req, req.user.id, accountId);
+    
+    res.json({ message: "Bank account disconnected" });
+  } catch (err) {
+    console.error("[Plaid] Error disconnecting account:", err);
+    res.status(500).json({ error: "Failed to disconnect account" });
+  }
+});
+
+app.post("/api/plaid/accounts/:id/sync", isAuthenticated, syncLimiter, async (req, res) => {
+  const accountId = req.params.id;
+  
+  try {
+    const accountResult = await db.query(
+      `SELECT * FROM bank_accounts WHERE id = $1 AND user_id = $2 AND is_active = TRUE`,
+      [accountId, req.user.id]
+    );
+    
+    if (accountResult.rows.length === 0) {
+      return res.status(404).json({ error: "Account not found" });
+    }
+    
+    const result = await transactionSyncService.syncAccountTransactions(db, accountResult.rows[0]);
+    await auditLogService.logTransactionSync(db, req.user.id, accountId, result);
+    
+    res.json(result);
+  } catch (err) {
+    console.error("[Plaid] Error syncing account:", err);
+    res.status(500).json({ error: "Failed to sync transactions" });
+  }
+});
+
+app.post("/api/plaid/sync-all", isAuthenticated, syncLimiter, async (req, res) => {
+  try {
+    const results = await transactionSyncService.syncUserTransactions(db, req.user.id);
+    res.json({ results });
+  } catch (err) {
+    console.error("[Plaid] Error syncing all accounts:", err);
+    res.status(500).json({ error: "Failed to sync transactions" });
+  }
+});
+
+// Plaid Webhook Handler
+app.post("/api/plaid/webhook", async (req, res) => {
+  const { webhook_type, webhook_code, item_id } = req.body;
+  
+  console.log(`[Plaid Webhook] Type: ${webhook_type}, Code: ${webhook_code}`);
+  
+  // Log webhook (verification would happen here in production)
+  await auditLogService.logWebhook(db, req, webhook_type, true, { webhook_code, item_id });
+  
+  try {
+    if (webhook_type === 'TRANSACTIONS') {
+      if (webhook_code === 'SYNC_UPDATES_AVAILABLE' || webhook_code === 'INITIAL_UPDATE' || webhook_code === 'HISTORICAL_UPDATE') {
+        // Find accounts for this item
+        const accounts = await db.query(
+          `SELECT * FROM bank_accounts WHERE plaid_item_id = $1 AND is_active = TRUE`,
+          [item_id]
+        );
+        
+        for (const account of accounts.rows) {
+          try {
+            await transactionSyncService.syncAccountTransactions(db, account);
+          } catch (e) {
+            console.error(`[Plaid Webhook] Failed to sync account ${account.id}:`, e.message);
+          }
+        }
+      }
+    }
+    
+    res.json({ received: true });
+  } catch (err) {
+    console.error("[Plaid Webhook] Error processing webhook:", err);
+    res.status(500).json({ error: "Webhook processing failed" });
+  }
+});
+
+// ----- Transaction Routes -----
+
+app.get("/api/transactions", isAuthenticated, validators.transactionFilters, handleValidationErrors, async (req, res) => {
+  try {
+    const transactions = await transactionSyncService.getTransactions(db, req.user.id, {
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
+      categoryId: req.query.categoryId,
+      accountId: req.query.accountId,
+      searchTerm: req.query.search,
+      limit: parseInt(req.query.limit) || 50,
+      offset: parseInt(req.query.offset) || 0
+    });
+    
+    res.json({ transactions });
+  } catch (err) {
+    console.error("Error fetching transactions:", err);
+    res.status(500).json({ error: "Failed to fetch transactions" });
+  }
+});
+
+app.post("/api/transactions/manual", isAuthenticated, validators.createTransaction, handleValidationErrors, async (req, res) => {
+  try {
+    const transaction = await transactionSyncService.addManualTransaction(db, req.user.id, {
+      amount: req.body.amount,
+      date: req.body.date,
+      name: req.body.name,
+      categoryId: req.body.categoryId,
+      notes: req.body.notes
+    });
+    
+    res.json({ transaction });
+  } catch (err) {
+    console.error("Error creating transaction:", err);
+    res.status(500).json({ error: "Failed to create transaction" });
+  }
+});
+
+app.put("/api/transactions/:id/category", isAuthenticated, validators.updateTransactionCategory, handleValidationErrors, async (req, res) => {
+  const transactionId = req.params.id;
+  const { categoryId } = req.body;
+  
+  try {
+    // Check ownership
+    const txResult = await db.query(
+      `SELECT user_id FROM transactions WHERE id = $1`,
+      [transactionId]
+    );
+    
+    if (txResult.rows.length === 0) {
+      return res.status(404).json({ error: "Transaction not found" });
+    }
+    
+    if (txResult.rows[0].user_id !== req.user.id) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    await db.query(
+      `UPDATE transactions SET category_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [categoryId, transactionId]
+    );
+    
+    res.json({ message: "Category updated" });
+  } catch (err) {
+    console.error("Error updating transaction category:", err);
+    res.status(500).json({ error: "Failed to update category" });
+  }
+});
+
+app.put("/api/transactions/:id/notes", isAuthenticated, validators.idParam, handleValidationErrors, async (req, res) => {
+  const transactionId = req.params.id;
+  const { notes } = req.body;
+  
+  try {
+    // Check ownership
+    const txResult = await db.query(
+      `SELECT user_id FROM transactions WHERE id = $1`,
+      [transactionId]
+    );
+    
+    if (txResult.rows.length === 0) {
+      return res.status(404).json({ error: "Transaction not found" });
+    }
+    
+    if (txResult.rows[0].user_id !== req.user.id) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    await db.query(
+      `UPDATE transactions SET notes = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [notes, transactionId]
+    );
+    
+    res.json({ message: "Notes updated" });
+  } catch (err) {
+    console.error("Error updating transaction notes:", err);
+    res.status(500).json({ error: "Failed to update notes" });
+  }
+});
+
+app.delete("/api/transactions/:id", isAuthenticated, validators.idParam, handleValidationErrors, async (req, res) => {
+  const transactionId = req.params.id;
+  
+  try {
+    // Only allow deleting manual transactions
+    const result = await db.query(
+      `DELETE FROM transactions WHERE id = $1 AND user_id = $2 AND is_manual = TRUE RETURNING id`,
+      [transactionId, req.user.id]
+    );
+    
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Transaction not found or cannot be deleted" });
+    }
+    
+    res.json({ message: "Transaction deleted" });
+  } catch (err) {
+    console.error("Error deleting transaction:", err);
+    res.status(500).json({ error: "Failed to delete transaction" });
+  }
+});
+
+// ----- Category Routes -----
+
+app.get("/api/categories", isAuthenticated, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT * FROM budget_categories
+      WHERE user_id = $1 OR is_system = TRUE
+      ORDER BY is_system DESC, name ASC
+    `, [req.user.id]);
+    
+    res.json({ categories: result.rows });
+  } catch (err) {
+    console.error("Error fetching categories:", err);
+    res.status(500).json({ error: "Failed to fetch categories" });
+  }
+});
+
+app.get("/api/categories/system", isAuthenticated, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT * FROM budget_categories WHERE is_system = TRUE ORDER BY name ASC
+    `);
+    
+    res.json({ categories: result.rows });
+  } catch (err) {
+    console.error("Error fetching system categories:", err);
+    res.status(500).json({ error: "Failed to fetch categories" });
+  }
+});
+
+app.post("/api/categories", isAuthenticated, validators.createCategory, handleValidationErrors, async (req, res) => {
+  const { name, color, icon, parentCategoryId } = req.body;
+  
+  try {
+    const result = await db.query(`
+      INSERT INTO budget_categories (user_id, name, color, icon, parent_category_id)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+    `, [req.user.id, name, color || '#6366f1', icon || 'tag', parentCategoryId || null]);
+    
+    res.json({ category: result.rows[0] });
+  } catch (err) {
+    console.error("Error creating category:", err);
+    res.status(500).json({ error: "Failed to create category" });
+  }
+});
+
+app.put("/api/categories/:id", isAuthenticated, validators.idParam, handleValidationErrors, async (req, res) => {
+  const categoryId = req.params.id;
+  const { name, color, icon } = req.body;
+  
+  try {
+    // Check ownership (can't edit system categories)
+    const catResult = await db.query(
+      `SELECT user_id, is_system FROM budget_categories WHERE id = $1`,
+      [categoryId]
+    );
+    
+    if (catResult.rows.length === 0) {
+      return res.status(404).json({ error: "Category not found" });
+    }
+    
+    if (catResult.rows[0].is_system) {
+      return res.status(403).json({ error: "Cannot edit system categories" });
+    }
+    
+    if (catResult.rows[0].user_id !== req.user.id) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    await db.query(`
+      UPDATE budget_categories
+      SET name = COALESCE($1, name), color = COALESCE($2, color), icon = COALESCE($3, icon)
+      WHERE id = $4
+    `, [name, color, icon, categoryId]);
+    
+    res.json({ message: "Category updated" });
+  } catch (err) {
+    console.error("Error updating category:", err);
+    res.status(500).json({ error: "Failed to update category" });
+  }
+});
+
+app.delete("/api/categories/:id", isAuthenticated, validators.idParam, handleValidationErrors, async (req, res) => {
+  const categoryId = req.params.id;
+  
+  try {
+    // Check ownership (can't delete system categories)
+    const catResult = await db.query(
+      `SELECT user_id, is_system FROM budget_categories WHERE id = $1`,
+      [categoryId]
+    );
+    
+    if (catResult.rows.length === 0) {
+      return res.status(404).json({ error: "Category not found" });
+    }
+    
+    if (catResult.rows[0].is_system) {
+      return res.status(403).json({ error: "Cannot delete system categories" });
+    }
+    
+    if (catResult.rows[0].user_id !== req.user.id) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    await db.query(`DELETE FROM budget_categories WHERE id = $1`, [categoryId]);
+    
+    res.json({ message: "Category deleted" });
+  } catch (err) {
+    console.error("Error deleting category:", err);
+    res.status(500).json({ error: "Failed to delete category" });
+  }
+});
+
+// ----- Budget Routes -----
+
+app.get("/api/budgets", isAuthenticated, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT b.*, bc.name as category_name, bc.color as category_color, bc.icon as category_icon
+      FROM budgets b
+      LEFT JOIN budget_categories bc ON b.category_id = bc.id
+      WHERE b.user_id = $1 AND b.is_active = TRUE
+      ORDER BY bc.name ASC
+    `, [req.user.id]);
+    
+    res.json({ budgets: result.rows });
+  } catch (err) {
+    console.error("Error fetching budgets:", err);
+    res.status(500).json({ error: "Failed to fetch budgets" });
+  }
+});
+
+app.get("/api/budgets/summary", isAuthenticated, async (req, res) => {
+  try {
+    const periodType = req.query.period || 'monthly';
+    const summary = await budgetCalculationService.getBudgetSummary(db, req.user.id, periodType);
+    res.json(summary);
+  } catch (err) {
+    console.error("Error fetching budget summary:", err);
+    res.status(500).json({ error: "Failed to fetch budget summary" });
+  }
+});
+
+app.post("/api/budgets", isAuthenticated, validators.createBudget, handleValidationErrors, async (req, res) => {
+  const { categoryId, amount, periodType } = req.body;
+  
+  try {
+    // Check if budget already exists for this category and period
+    const existing = await db.query(`
+      SELECT id FROM budgets
+      WHERE user_id = $1 AND category_id = $2 AND period_type = $3 AND is_active = TRUE
+    `, [req.user.id, categoryId, periodType]);
+    
+    if (existing.rows.length > 0) {
+      return res.status(400).json({ error: "Budget already exists for this category and period" });
+    }
+    
+    const result = await db.query(`
+      INSERT INTO budgets (user_id, category_id, amount, period_type)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+    `, [req.user.id, categoryId, amount, periodType]);
+    
+    res.json({ budget: result.rows[0] });
+  } catch (err) {
+    console.error("Error creating budget:", err);
+    res.status(500).json({ error: "Failed to create budget" });
+  }
+});
+
+app.put("/api/budgets/:id", isAuthenticated, validators.updateBudget, handleValidationErrors, async (req, res) => {
+  const budgetId = req.params.id;
+  const { amount, periodType, isActive } = req.body;
+  
+  try {
+    // Check ownership
+    const budgetResult = await db.query(
+      `SELECT user_id FROM budgets WHERE id = $1`,
+      [budgetId]
+    );
+    
+    if (budgetResult.rows.length === 0) {
+      return res.status(404).json({ error: "Budget not found" });
+    }
+    
+    if (budgetResult.rows[0].user_id !== req.user.id) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    await db.query(`
+      UPDATE budgets
+      SET amount = COALESCE($1, amount),
+          period_type = COALESCE($2, period_type),
+          is_active = COALESCE($3, is_active),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $4
+    `, [amount, periodType, isActive, budgetId]);
+    
+    res.json({ message: "Budget updated" });
+  } catch (err) {
+    console.error("Error updating budget:", err);
+    res.status(500).json({ error: "Failed to update budget" });
+  }
+});
+
+app.delete("/api/budgets/:id", isAuthenticated, validators.idParam, handleValidationErrors, async (req, res) => {
+  const budgetId = req.params.id;
+  
+  try {
+    const result = await db.query(
+      `DELETE FROM budgets WHERE id = $1 AND user_id = $2 RETURNING id`,
+      [budgetId, req.user.id]
+    );
+    
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Budget not found" });
+    }
+    
+    res.json({ message: "Budget deleted" });
+  } catch (err) {
+    console.error("Error deleting budget:", err);
+    res.status(500).json({ error: "Failed to delete budget" });
+  }
+});
+
+// ----- Budget Goals Routes -----
+
+app.get("/api/budget-goals", isAuthenticated, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT bg.*, bc.name as category_name, bc.color as category_color
+      FROM budget_goals bg
+      LEFT JOIN budget_categories bc ON bg.category_id = bc.id
+      WHERE bg.user_id = $1 AND bg.is_active = TRUE
+      ORDER BY bg.created_at DESC
+    `, [req.user.id]);
+    
+    res.json({ goals: result.rows });
+  } catch (err) {
+    console.error("Error fetching goals:", err);
+    res.status(500).json({ error: "Failed to fetch goals" });
+  }
+});
+
+app.get("/api/budget-goals/progress", isAuthenticated, async (req, res) => {
+  try {
+    const progress = await budgetCalculationService.getBudgetGoalProgress(db, req.user.id);
+    res.json({ goals: progress });
+  } catch (err) {
+    console.error("Error fetching goal progress:", err);
+    res.status(500).json({ error: "Failed to fetch goal progress" });
+  }
+});
+
+app.post("/api/budget-goals", isAuthenticated, validators.createGoal, handleValidationErrors, async (req, res) => {
+  const { categoryId, targetAmount, goalType, periodType } = req.body;
+  
+  try {
+    const result = await db.query(`
+      INSERT INTO budget_goals (user_id, category_id, target_amount, goal_type, period_type)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+    `, [req.user.id, categoryId || null, targetAmount, goalType, periodType]);
+    
+    res.json({ goal: result.rows[0] });
+  } catch (err) {
+    console.error("Error creating goal:", err);
+    res.status(500).json({ error: "Failed to create goal" });
+  }
+});
+
+app.put("/api/budget-goals/:id", isAuthenticated, validators.idParam, handleValidationErrors, async (req, res) => {
+  const goalId = req.params.id;
+  const { targetAmount, isActive } = req.body;
+  
+  try {
+    // Check ownership
+    const goalResult = await db.query(
+      `SELECT user_id FROM budget_goals WHERE id = $1`,
+      [goalId]
+    );
+    
+    if (goalResult.rows.length === 0) {
+      return res.status(404).json({ error: "Goal not found" });
+    }
+    
+    if (goalResult.rows[0].user_id !== req.user.id) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    await db.query(`
+      UPDATE budget_goals
+      SET target_amount = COALESCE($1, target_amount),
+          is_active = COALESCE($2, is_active)
+      WHERE id = $3
+    `, [targetAmount, isActive, goalId]);
+    
+    res.json({ message: "Goal updated" });
+  } catch (err) {
+    console.error("Error updating goal:", err);
+    res.status(500).json({ error: "Failed to update goal" });
+  }
+});
+
+app.delete("/api/budget-goals/:id", isAuthenticated, validators.idParam, handleValidationErrors, async (req, res) => {
+  const goalId = req.params.id;
+  
+  try {
+    const result = await db.query(
+      `DELETE FROM budget_goals WHERE id = $1 AND user_id = $2 RETURNING id`,
+      [goalId, req.user.id]
+    );
+    
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Goal not found" });
+    }
+    
+    res.json({ message: "Goal deleted" });
+  } catch (err) {
+    console.error("Error deleting goal:", err);
+    res.status(500).json({ error: "Failed to delete goal" });
+  }
+});
+
+// ----- Analytics Routes -----
+
+app.get("/api/spending/by-category", isAuthenticated, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const { startDate: defaultStart, endDate: defaultEnd } = budgetCalculationService.getPeriodDates('monthly');
+    
+    const spending = await budgetCalculationService.getSpendingByCategory(
+      db,
+      req.user.id,
+      startDate || defaultStart,
+      endDate || defaultEnd
+    );
+    
+    res.json({ spending });
+  } catch (err) {
+    console.error("Error fetching spending by category:", err);
+    res.status(500).json({ error: "Failed to fetch spending data" });
+  }
+});
+
+app.get("/api/spending/trends", isAuthenticated, async (req, res) => {
+  try {
+    const months = parseInt(req.query.months) || 6;
+    const trends = await budgetCalculationService.getSpendingTrends(db, req.user.id, months);
+    res.json({ trends });
+  } catch (err) {
+    console.error("Error fetching spending trends:", err);
+    res.status(500).json({ error: "Failed to fetch trends" });
+  }
+});
+
+app.get("/api/budget/alerts", isAuthenticated, async (req, res) => {
+  try {
+    const alerts = await budgetCalculationService.checkBudgetAlerts(db, req.user.id);
+    res.json({ alerts });
+  } catch (err) {
+    console.error("Error checking budget alerts:", err);
+    res.status(500).json({ error: "Failed to check alerts" });
+  }
+});
+
+// ==================== END OF BUDGET MANAGEMENT API ROUTES ====================
 
 
 

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
+import PlaidLinkButton from '../components/PlaidLink';
 
 function Settings() {
     const [phone, setPhone] = useState('');
@@ -12,9 +13,12 @@ function Settings() {
     const [success, setSuccess] = useState('');
     const [codeSent, setCodeSent] = useState(false);
     const [currentPhone, setCurrentPhone] = useState(null);
+    const [bankAccounts, setBankAccounts] = useState([]);
+    const [disconnecting, setDisconnecting] = useState(null);
 
     useEffect(() => {
         fetchSettings();
+        fetchBankAccounts();
     }, []);
 
     const fetchSettings = async () => {
@@ -27,6 +31,37 @@ function Settings() {
             console.error('Error fetching settings:', err);
             setError('Failed to load settings');
             setLoading(false);
+        }
+    };
+
+    const fetchBankAccounts = async () => {
+        try {
+            const res = await axios.get('/api/plaid/accounts');
+            setBankAccounts(res.data.accounts || []);
+        } catch (err) {
+            console.error('Error fetching bank accounts:', err);
+        }
+    };
+
+    const handlePlaidSuccess = (data) => {
+        setSuccess('Bank account connected successfully!');
+        fetchBankAccounts();
+    };
+
+    const handleDisconnect = async (accountId) => {
+        if (!confirm('Are you sure you want to disconnect this account? Your transaction history will be preserved.')) {
+            return;
+        }
+        
+        setDisconnecting(accountId);
+        try {
+            await axios.post(`/api/plaid/accounts/${accountId}/disconnect`);
+            setSuccess('Bank account disconnected');
+            fetchBankAccounts();
+        } catch (err) {
+            setError(err.response?.data?.error || 'Failed to disconnect account');
+        } finally {
+            setDisconnecting(null);
         }
     };
 
@@ -217,6 +252,104 @@ function Settings() {
                 <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.6' }}>
                     We verify your phone number to ensure you receive important alerts. The verification code will be sent via SMS and expires in 10 minutes. 
                     Your phone number is only used for sending alerts and is not shared with third parties.
+                </p>
+            </div>
+
+            {/* Bank Accounts Section */}
+            <div className="card glass-card" style={{ marginTop: '2rem' }}>
+                <h2 style={{ marginTop: 0, marginBottom: '1rem', fontSize: '1.5rem' }}>Connected Bank Accounts</h2>
+                <p className="text-muted" style={{ marginBottom: '1.5rem', fontSize: '0.95rem' }}>
+                    Connect your bank accounts to automatically import transactions for budget tracking.
+                </p>
+
+                {bankAccounts.filter(a => a.is_active).length > 0 ? (
+                    <div style={{ marginBottom: '1.5rem' }}>
+                        {bankAccounts.filter(a => a.is_active).map((account) => (
+                            <div
+                                key={account.id}
+                                style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    padding: '1rem',
+                                    backgroundColor: 'var(--bg-secondary)',
+                                    borderRadius: '8px',
+                                    marginBottom: '0.75rem',
+                                    border: '1px solid var(--border)'
+                                }}
+                            >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                    <div style={{
+                                        width: '40px',
+                                        height: '40px',
+                                        borderRadius: '8px',
+                                        backgroundColor: 'var(--primary)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        color: 'white',
+                                        fontWeight: 'bold',
+                                        fontSize: '1.25rem'
+                                    }}>
+                                        🏦
+                                    </div>
+                                    <div>
+                                        <div style={{ fontWeight: '500' }}>{account.institution_name}</div>
+                                        <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+                                            {account.account_name} ···{account.mask}
+                                        </div>
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                            {account.account_type} • {account.account_subtype}
+                                        </div>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => handleDisconnect(account.id)}
+                                    disabled={disconnecting === account.id}
+                                    style={{
+                                        padding: '0.5rem 1rem',
+                                        backgroundColor: 'transparent',
+                                        color: 'var(--danger)',
+                                        border: '1px solid var(--danger)',
+                                        borderRadius: '6px',
+                                        cursor: disconnecting === account.id ? 'not-allowed' : 'pointer',
+                                        opacity: disconnecting === account.id ? 0.7 : 1,
+                                        fontSize: '0.875rem'
+                                    }}
+                                >
+                                    {disconnecting === account.id ? 'Disconnecting...' : 'Disconnect'}
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div style={{
+                        padding: '2rem',
+                        textAlign: 'center',
+                        backgroundColor: 'var(--bg-secondary)',
+                        borderRadius: '8px',
+                        marginBottom: '1.5rem'
+                    }}>
+                        <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🏦</div>
+                        <p style={{ color: 'var(--text-muted)', margin: 0 }}>
+                            No bank accounts connected yet
+                        </p>
+                    </div>
+                )}
+
+                <PlaidLinkButton
+                    onSuccess={handlePlaidSuccess}
+                    buttonText="Connect a Bank Account"
+                    buttonStyle={{ width: '100%', justifyContent: 'center' }}
+                />
+            </div>
+
+            {/* Security Note */}
+            <div className="card glass-card" style={{ marginTop: '2rem', backgroundColor: 'rgba(16, 185, 129, 0.05)' }}>
+                <h3 style={{ marginTop: 0, marginBottom: '0.5rem', fontSize: '1.1rem' }}>🔒 Bank Connection Security</h3>
+                <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.6' }}>
+                    We use Plaid, a trusted financial data platform used by major banks and apps, to securely connect your accounts. 
+                    Your bank credentials are never stored on our servers. We only receive read-only access to your transaction data.
                 </p>
             </div>
         </div>
