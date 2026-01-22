@@ -38,10 +38,13 @@ def get_stock_data(ticker, period='1w'):
     # Suppress timezone warnings from yfinance
     import warnings
     import os
+    import sys
     # Suppress all warnings from yfinance about timezones
     warnings.filterwarnings('ignore')
-    # Set environment variable to prevent yfinance from trying to use zoneinfo
-    os.environ['TZ'] = 'UTC'
+    # Redirect stderr temporarily to suppress yfinance timezone errors
+    # (yfinance prints to stderr but still works)
+    original_stderr = sys.stderr
+    sys.stderr = open(os.devnull, 'w')
     
     try:
         df = yf.download(
@@ -51,9 +54,11 @@ def get_stock_data(ticker, period='1w'):
                 auto_adjust=True,
                 progress=False)
     except Exception as e:
+        sys.stderr = original_stderr
         print(f"Warning: Error during download: {e}")
         # Try again without auto_adjust if it fails
         try:
+            sys.stderr = open(os.devnull, 'w')
             df = yf.download(
                     tickers=ticker,
                     period=yf_period,
@@ -61,8 +66,13 @@ def get_stock_data(ticker, period='1w'):
                     auto_adjust=False,
                     progress=False)
         except Exception as e2:
+            sys.stderr = original_stderr
             print(f"Error: Failed to download data: {e2}")
             return json.dumps({'labels': [], 'data': []})
+    finally:
+        # Restore stderr
+        sys.stderr.close()
+        sys.stderr = original_stderr
 
     if df.empty:
         return json.dumps({'labels': [], 'data': []})

@@ -11,7 +11,8 @@ FROM node:22-alpine
 WORKDIR /usr/src/app
 
 # Install Python and dependencies (for backend scripts)
-RUN apk add --no-cache python3 py3-pip
+# Install tzdata for timezone support (needed for zoneinfo in Python)
+RUN apk add --no-cache python3 py3-pip tzdata
 COPY server/requirements.txt ./
 # Use --break-system-packages as we are in a container
 RUN pip3 install --no-cache-dir -r requirements.txt --break-system-packages
