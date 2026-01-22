@@ -542,10 +542,6 @@ app.get("/about", (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'landing.html'));
 });
 
-app.listen(port, () => {
-  console.log(`Server running on port ${port}!`);
-});
-
 
 
 app.get("/auth/google", passport.authenticate("google", {
@@ -2570,8 +2566,8 @@ app.get("/api/market/overview", isAuthenticated, async (req, res) => {
 
 // Serve React App in production
 if (process.env.NODE_ENV === 'production') {
-  const prodDir = path.resolve();
-  const clientBuildPath = path.join(prodDir, 'client', 'dist');
+  
+  const clientBuildPath = path.join(prodDir, 'public');
 
   app.use(express.static(clientBuildPath));
 
