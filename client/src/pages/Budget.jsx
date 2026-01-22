@@ -261,13 +261,13 @@ function CreateBudgetModal({ isOpen, onClose, onSave, categories }) {
                                 padding: '0.75rem',
                                 border: '1px solid var(--border)',
                                 borderRadius: '8px',
-                                backgroundColor: 'var(--bg-secondary)',
-                                color: 'var(--text-primary)'
+                                backgroundColor: '#1a1a2e',
+                                color: '#e0e0e0'
                             }}
                         >
-                            <option value="weekly">Weekly</option>
-                            <option value="monthly">Monthly</option>
-                            <option value="yearly">Yearly</option>
+                            <option value="weekly" style={{ backgroundColor: '#1a1a2e', color: '#e0e0e0' }}>Weekly</option>
+                            <option value="monthly" style={{ backgroundColor: '#1a1a2e', color: '#e0e0e0' }}>Monthly</option>
+                            <option value="yearly" style={{ backgroundColor: '#1a1a2e', color: '#e0e0e0' }}>Yearly</option>
                         </select>
                     </div>
 
@@ -355,13 +355,13 @@ function Budget() {
                             padding: '0.5rem 1rem',
                             border: '1px solid var(--border)',
                             borderRadius: '8px',
-                            backgroundColor: 'var(--bg-secondary)',
-                            color: 'var(--text-primary)'
+                            backgroundColor: '#1a1a2e',
+                            color: '#e0e0e0'
                         }}
                     >
-                        <option value="weekly">Weekly</option>
-                        <option value="monthly">Monthly</option>
-                        <option value="yearly">Yearly</option>
+                        <option value="weekly" style={{ backgroundColor: '#1a1a2e', color: '#e0e0e0' }}>Weekly</option>
+                        <option value="monthly" style={{ backgroundColor: '#1a1a2e', color: '#e0e0e0' }}>Monthly</option>
+                        <option value="yearly" style={{ backgroundColor: '#1a1a2e', color: '#e0e0e0' }}>Yearly</option>
                     </select>
                     <button
                         onClick={() => setShowCreateModal(true)}

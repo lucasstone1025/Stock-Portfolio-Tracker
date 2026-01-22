@@ -60,6 +60,10 @@ const PgSession = connectPgSimple(session);
 const app = express();
 app.set('trust proxy', 1); // trust proxy fix my problem!!
 
+// Body parsing middleware - must be before routes
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 const port = process.env.PORT || 3000;
 const saltRounds = 10;
 
@@ -527,6 +531,16 @@ app.set("view engine", "ejs");
 app.set('views', path.join(__dirname, '../_archive/views'));
 
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Public landing page (no auth required) - for Twilio verification & new visitors
+app.get("/landing", (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+});
+
+// Also serve at /about for an alternative public URL
+app.get("/about", (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+});
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}!`);
@@ -1493,23 +1507,45 @@ app.post("/api/plaid/accounts/:id/disconnect", isAuthenticated, async (req, res)
   }
 });
 
+// Get remaining sync count for today
+app.get("/api/plaid/sync-status", isAuthenticated, async (req, res) => {
+  try {
+    const syncLimit = await auditLogService.checkSyncLimit(db, req.user.id, 3);
+    res.json(syncLimit);
+  } catch (err) {
+    console.error("[Plaid] Error getting sync status:", err);
+    res.status(500).json({ error: "Failed to get sync status" });
+  }
+});
+
 app.post("/api/plaid/accounts/:id/sync", isAuthenticated, syncLimiter, async (req, res) => {
   const accountId = req.params.id;
-  
+
   try {
+    // Check daily sync limit
+    const syncLimit = await auditLogService.checkSyncLimit(db, req.user.id, 3);
+    if (!syncLimit.canSync) {
+      return res.status(429).json({
+        error: "Daily sync limit reached (3 per day). Try again tomorrow.",
+        remaining: 0,
+        dailyLimit: syncLimit.dailyLimit
+      });
+    }
+
     const accountResult = await db.query(
       `SELECT * FROM bank_accounts WHERE id = $1 AND user_id = $2 AND is_active = TRUE`,
       [accountId, req.user.id]
     );
-    
+
     if (accountResult.rows.length === 0) {
       return res.status(404).json({ error: "Account not found" });
     }
-    
+
     const result = await transactionSyncService.syncAccountTransactions(db, accountResult.rows[0]);
     await auditLogService.logTransactionSync(db, req.user.id, accountId, result);
-    
-    res.json(result);
+    await auditLogService.logManualSync(db, req, req.user.id);
+
+    res.json({ ...result, remaining: syncLimit.remaining - 1 });
   } catch (err) {
     console.error("[Plaid] Error syncing account:", err);
     res.status(500).json({ error: "Failed to sync transactions" });
@@ -1518,8 +1554,20 @@ app.post("/api/plaid/accounts/:id/sync", isAuthenticated, syncLimiter, async (re
 
 app.post("/api/plaid/sync-all", isAuthenticated, syncLimiter, async (req, res) => {
   try {
+    // Check daily sync limit
+    const syncLimit = await auditLogService.checkSyncLimit(db, req.user.id, 3);
+    if (!syncLimit.canSync) {
+      return res.status(429).json({
+        error: "Daily sync limit reached (3 per day). Try again tomorrow.",
+        remaining: 0,
+        dailyLimit: syncLimit.dailyLimit
+      });
+    }
+
     const results = await transactionSyncService.syncUserTransactions(db, req.user.id);
-    res.json({ results });
+    await auditLogService.logManualSync(db, req, req.user.id);
+
+    res.json({ results, remaining: syncLimit.remaining - 1 });
   } catch (err) {
     console.error("[Plaid] Error syncing all accounts:", err);
     res.status(500).json({ error: "Failed to sync transactions" });

@@ -353,6 +353,7 @@ function Transactions() {
     const [loading, setLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
     const [syncing, setSyncing] = useState(false);
+    const [syncStatus, setSyncStatus] = useState({ remaining: 3, dailyLimit: 3 });
 
     // Filters
     const [filters, setFilters] = useState({
@@ -365,11 +366,21 @@ function Transactions() {
 
     useEffect(() => {
         fetchInitialData();
+        fetchSyncStatus();
     }, []);
 
     useEffect(() => {
         fetchTransactions();
     }, [filters]);
+
+    const fetchSyncStatus = async () => {
+        try {
+            const res = await axios.get('/api/plaid/sync-status');
+            setSyncStatus(res.data);
+        } catch (err) {
+            console.error('Error fetching sync status:', err);
+        }
+    };
 
     const fetchInitialData = async () => {
         try {
@@ -403,13 +414,21 @@ function Transactions() {
     };
 
     const handleSync = async () => {
+        if (syncStatus.remaining <= 0) {
+            alert('Daily sync limit reached (3 per day). Try again tomorrow.');
+            return;
+        }
         setSyncing(true);
         try {
-            await axios.post('/api/plaid/sync-all');
+            const res = await axios.post('/api/plaid/sync-all');
+            if (res.data.remaining !== undefined) {
+                setSyncStatus(prev => ({ ...prev, remaining: res.data.remaining }));
+            }
             fetchTransactions();
         } catch (err) {
             console.error('Error syncing:', err);
             alert(err.response?.data?.error || 'Failed to sync transactions');
+            fetchSyncStatus(); // Refresh status on error
         } finally {
             setSyncing(false);
         }
@@ -427,8 +446,9 @@ function Transactions() {
 
     // Calculate totals
     const totals = transactions.reduce((acc, t) => {
-        if (t.amount < 0) acc.expenses += Math.abs(t.amount);
-        else acc.income += t.amount;
+        const amount = parseFloat(t.amount) || 0;
+        if (amount < 0) acc.expenses += Math.abs(amount);
+        else acc.income += amount;
         return acc;
     }, { income: 0, expenses: 0 });
 
@@ -441,17 +461,19 @@ function Transactions() {
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <button
                         onClick={handleSync}
-                        disabled={syncing}
+                        disabled={syncing || syncStatus.remaining <= 0}
+                        title={syncStatus.remaining <= 0 ? 'Daily limit reached' : `${syncStatus.remaining} syncs remaining today`}
                         style={{
                             padding: '0.5rem 1rem',
                             backgroundColor: 'var(--bg-secondary)',
-                            color: 'var(--text-primary)',
+                            color: syncStatus.remaining <= 0 ? 'var(--text-muted)' : 'var(--text-primary)',
                             border: '1px solid var(--border)',
                             borderRadius: '8px',
-                            cursor: syncing ? 'not-allowed' : 'pointer'
+                            cursor: syncing || syncStatus.remaining <= 0 ? 'not-allowed' : 'pointer',
+                            opacity: syncStatus.remaining <= 0 ? 0.5 : 1
                         }}
                     >
-                        {syncing ? '🔄 Syncing...' : '🔄 Sync'}
+                        {syncing ? '🔄 Syncing...' : `🔄 Sync (${syncStatus.remaining})`}
                     </button>
                     <button
                         onClick={() => setShowAddModal(true)}
@@ -529,6 +551,25 @@ function Transactions() {
                         />
                     </div>
                     <div>
+                        <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem', opacity: 0 }}>Reset</label>
+                        <button
+                            onClick={() => setFilters({ ...filters, startDate: '', endDate: '' })}
+                            disabled={!filters.startDate && !filters.endDate}
+                            style={{
+                                padding: '0.5rem 0.75rem',
+                                backgroundColor: 'transparent',
+                                color: filters.startDate || filters.endDate ? 'var(--primary)' : 'var(--text-muted)',
+                                border: '1px solid var(--border)',
+                                borderRadius: '6px',
+                                cursor: filters.startDate || filters.endDate ? 'pointer' : 'not-allowed',
+                                fontSize: '0.875rem',
+                                opacity: filters.startDate || filters.endDate ? 1 : 0.5
+                            }}
+                        >
+                            Reset Dates
+                        </button>
+                    </div>
+                    <div>
                         <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Category</label>
                         <CategorySelect
                             categories={categories}
@@ -547,13 +588,13 @@ function Transactions() {
                                     padding: '0.5rem',
                                     border: '1px solid var(--border)',
                                     borderRadius: '6px',
-                                    backgroundColor: 'var(--bg-secondary)',
-                                    color: 'var(--text-primary)'
+                                    backgroundColor: '#1a1a2e',
+                                    color: '#e0e0e0'
                                 }}
                             >
-                                <option value="">All accounts</option>
+                                <option value="" style={{ backgroundColor: '#1a1a2e', color: '#e0e0e0' }}>All accounts</option>
                                 {accounts.map((acc) => (
-                                    <option key={acc.id} value={acc.id}>
+                                    <option key={acc.id} value={acc.id} style={{ backgroundColor: '#1a1a2e', color: '#e0e0e0' }}>
                                         {acc.institution_name} ···{acc.mask}
                                     </option>
                                 ))}

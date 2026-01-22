@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
@@ -18,7 +19,14 @@ import Navbar from './components/Navbar';
 const PrivateRoute = ({ children }) => {
   const { user, loading } = useAuth();
   if (loading) return <div>Loading...</div>;
-  return user ? children : <Navigate to="/login" />;
+  return user ? children : <Navigate to="/landing" />;
+};
+
+// Redirect logged-in users away from landing/login to dashboard
+const PublicRoute = ({ children }) => {
+  const { user, loading } = useAuth();
+  if (loading) return <div>Loading...</div>;
+  return user ? <Navigate to="/dashboard" /> : children;
 };
 
 const Layout = ({ children }) => {
@@ -39,26 +47,35 @@ function App() {
   return (
     <Router>
       <AuthProvider>
-        <Layout>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
-            <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
-            <Route path="/watchlist" element={<PrivateRoute><Watchlist /></PrivateRoute>} />
-            <Route path="/alerts" element={<PrivateRoute><Alerts /></PrivateRoute>} />
-            <Route path="/search" element={<PrivateRoute><Search /></PrivateRoute>} />
-            <Route path="/find-stocks" element={<PrivateRoute><FindStocks /></PrivateRoute>} />
-            <Route path="/faq" element={<PrivateRoute><FAQ /></PrivateRoute>} />
-            <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
-            <Route path="/budget" element={<PrivateRoute><Budget /></PrivateRoute>} />
-            <Route path="/transactions" element={<PrivateRoute><Transactions /></PrivateRoute>} />
-            <Route path="/categories" element={<PrivateRoute><Categories /></PrivateRoute>} />
-            <Route path="/stock/:symbol" element={<PrivateRoute><StockDetails /></PrivateRoute>} />
-            {/* Fallback */}
-            <Route path="*" element={<Navigate to="/" />} />
-          </Routes>
-        </Layout>
+        <Routes>
+          {/* Public routes - no layout wrapper, redirect to dashboard if logged in */}
+          <Route path="/" element={<PublicRoute><Landing /></PublicRoute>} />
+          <Route path="/landing" element={<PublicRoute><Landing /></PublicRoute>} />
+          <Route path="/about" element={<Landing />} />
+
+          {/* All other routes with Layout */}
+          <Route path="*" element={
+            <Layout>
+              <Routes>
+                <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+                <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
+                <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+                <Route path="/watchlist" element={<PrivateRoute><Watchlist /></PrivateRoute>} />
+                <Route path="/alerts" element={<PrivateRoute><Alerts /></PrivateRoute>} />
+                <Route path="/search" element={<PrivateRoute><Search /></PrivateRoute>} />
+                <Route path="/find-stocks" element={<PrivateRoute><FindStocks /></PrivateRoute>} />
+                <Route path="/faq" element={<PrivateRoute><FAQ /></PrivateRoute>} />
+                <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
+                <Route path="/budget" element={<PrivateRoute><Budget /></PrivateRoute>} />
+                <Route path="/transactions" element={<PrivateRoute><Transactions /></PrivateRoute>} />
+                <Route path="/categories" element={<PrivateRoute><Categories /></PrivateRoute>} />
+                <Route path="/stock/:symbol" element={<PrivateRoute><StockDetails /></PrivateRoute>} />
+                {/* Fallback */}
+                <Route path="*" element={<Navigate to="/dashboard" />} />
+              </Routes>
+            </Layout>
+          } />
+        </Routes>
       </AuthProvider>
     </Router>
   );

@@ -291,6 +291,57 @@ export async function getAuditLogs(db, userId = null, filters = {}) {
     return result.rows;
 }
 
+/**
+ * Get the count of manual syncs a user has performed today
+ * @param {Object} db - Database pool
+ * @param {number} userId - User ID
+ * @returns {Promise<number>} Number of syncs today
+ */
+export async function getTodaySyncCount(db, userId) {
+    const result = await db.query(`
+        SELECT COUNT(*) as count FROM audit_logs
+        WHERE user_id = $1
+        AND action = 'MANUAL_SYNC'
+        AND created_at >= CURRENT_DATE
+        AND created_at < CURRENT_DATE + INTERVAL '1 day'
+    `, [userId]);
+    return parseInt(result.rows[0].count) || 0;
+}
+
+/**
+ * Check if user can perform a manual sync
+ * @param {Object} db - Database pool
+ * @param {number} userId - User ID
+ * @param {number} dailyLimit - Maximum syncs per day (default 3)
+ * @returns {Promise<Object>} { canSync, remaining, used }
+ */
+export async function checkSyncLimit(db, userId, dailyLimit = 3) {
+    const used = await getTodaySyncCount(db, userId);
+    const remaining = Math.max(0, dailyLimit - used);
+    return {
+        canSync: used < dailyLimit,
+        remaining,
+        used,
+        dailyLimit
+    };
+}
+
+/**
+ * Log a manual sync event (user-initiated)
+ * @param {Object} db - Database pool
+ * @param {Object} req - Express request object
+ * @param {number} userId - User ID
+ */
+export async function logManualSync(db, req, userId) {
+    await logAuditEvent(db, {
+        userId,
+        action: 'MANUAL_SYNC',
+        resourceType: 'transaction_sync',
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent')
+    });
+}
+
 export default {
     logAuditEvent,
     logBankConnection,
@@ -303,6 +354,9 @@ export default {
     logTransactionSync,
     logSensitiveDataAccess,
     logAccountDeletion,
-    getAuditLogs
+    getAuditLogs,
+    getTodaySyncCount,
+    checkSyncLimit,
+    logManualSync
 };
 

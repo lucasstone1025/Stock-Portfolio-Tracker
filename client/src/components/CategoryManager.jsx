@@ -264,14 +264,14 @@ function CategorySelect({ categories, value, onChange, placeholder = "Select cat
                 padding: '0.5rem',
                 border: '1px solid var(--border)',
                 borderRadius: '6px',
-                backgroundColor: 'var(--bg-secondary)',
-                color: 'var(--text-primary)',
+                backgroundColor: '#1a1a2e',
+                color: '#e0e0e0',
                 cursor: 'pointer'
             }}
         >
-            <option value="">{placeholder}</option>
+            <option value="" style={{ backgroundColor: '#1a1a2e', color: '#e0e0e0' }}>{placeholder}</option>
             {categories.map((cat) => (
-                <option key={cat.id} value={cat.id}>
+                <option key={cat.id} value={cat.id} style={{ backgroundColor: '#1a1a2e', color: '#e0e0e0' }}>
                     {cat.name}
                 </option>
             ))}
