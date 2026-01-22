@@ -2571,7 +2571,9 @@ app.get("/api/market/overview", isAuthenticated, async (req, res) => {
 // Serve React App in production
 if (process.env.NODE_ENV === 'production') {
   const prodDir = path.resolve();
-  app.use(express.static(path.join(prodDir, 'public')));
+  const clientBuildPath = path.join(prodDir, 'client', 'dist');
+
+  app.use(express.static(clientBuildPath));
 
   // SPA fallback - only for GET requests that aren't API routes
   app.get('*', (req, res, next) => {
@@ -2579,7 +2581,7 @@ if (process.env.NODE_ENV === 'production') {
     if (req.path.startsWith('/api')) {
       return next();
     }
-    res.sendFile(path.resolve(prodDir, 'public', 'index.html'));
+    res.sendFile(path.join(clientBuildPath, 'index.html'));
   });
 }
 
