@@ -2566,14 +2566,12 @@ app.get("/api/market/overview", isAuthenticated, async (req, res) => {
 
 // Serve React App in production
 if (process.env.NODE_ENV === 'production') {
-  
-  const clientBuildPath = path.join(prodDir, 'public');
+  const clientBuildPath = path.join(__dirname, 'public');
 
   app.use(express.static(clientBuildPath));
 
   // SPA fallback - only for GET requests that aren't API routes
   app.get('*', (req, res, next) => {
-    // Skip API routes
     if (req.path.startsWith('/api')) {
       return next();
     }
@@ -2582,5 +2580,5 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 app.listen(port, () => {
-  console.log("Server running!");
+  console.log(`Server running on port ${port}!`);
 });
