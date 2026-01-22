@@ -2571,7 +2571,8 @@ if (process.env.NODE_ENV === 'production') {
   app.use(express.static(clientBuildPath));
 
   // SPA fallback - only for GET requests that aren't API routes
-  app.get('*', (req, res, next) => {
+  // Express 5 requires named wildcard parameter
+  app.get('/{*path}', (req, res, next) => {
     if (req.path.startsWith('/api')) {
       return next();
     }
