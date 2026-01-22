@@ -2570,13 +2570,16 @@ app.get("/api/market/overview", isAuthenticated, async (req, res) => {
 
 // Serve React App in production
 if (process.env.NODE_ENV === 'production') {
-  const __dirname = path.resolve();
-  app.use(express.static(path.join(__dirname, 'public')));
+  const prodDir = path.resolve();
+  app.use(express.static(path.join(prodDir, 'public')));
 
-  // Express 5 requires proper wildcard syntax
-  // Fallback for SPA (using middleware to avoid router syntax issues)
-  app.use((req, res) => {
-    res.sendFile(path.resolve(__dirname, 'public', 'index.html'));
+  // SPA fallback - only for GET requests that aren't API routes
+  app.get('*', (req, res, next) => {
+    // Skip API routes
+    if (req.path.startsWith('/api')) {
+      return next();
+    }
+    res.sendFile(path.resolve(prodDir, 'public', 'index.html'));
   });
 }
 

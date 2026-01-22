@@ -49,7 +49,7 @@ function Settings() {
     };
 
     const handleDisconnect = async (accountId) => {
-        if (!confirm('Are you sure you want to disconnect this account? Your transaction history will be preserved.')) {
+        if (!confirm('Are you sure you want to disconnect this account? All transactions from this account will be deleted.')) {
             return;
         }
         

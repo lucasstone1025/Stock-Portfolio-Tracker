@@ -19,7 +19,7 @@ const formatDate = (dateString) => {
     });
 };
 
-function TransactionRow({ transaction, categories, onCategoryChange, onDelete }) {
+function TransactionRow({ transaction, categories, onCategoryChange, onDelete, isSelected, onToggleSelect }) {
     const [editing, setEditing] = useState(false);
     const [categoryId, setCategoryId] = useState(transaction.category_id);
 
@@ -44,8 +44,22 @@ function TransactionRow({ transaction, categories, onCategoryChange, onDelete })
             alignItems: 'center',
             padding: '1rem',
             borderBottom: '1px solid var(--border)',
-            gap: '1rem'
+            gap: '1rem',
+            backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.1)' : 'transparent'
         }}>
+            {/* Checkbox */}
+            <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={() => onToggleSelect(transaction.id)}
+                style={{
+                    width: '18px',
+                    height: '18px',
+                    cursor: 'pointer',
+                    accentColor: 'var(--primary)'
+                }}
+            />
+
             {/* Category indicator */}
             <div style={{
                 width: '8px',
@@ -355,6 +369,11 @@ function Transactions() {
     const [syncing, setSyncing] = useState(false);
     const [syncStatus, setSyncStatus] = useState({ remaining: 3, dailyLimit: 3 });
 
+    // Selection state
+    const [selectedIds, setSelectedIds] = useState(new Set());
+    const [bulkCategoryId, setBulkCategoryId] = useState('');
+    const [applyingBulk, setApplyingBulk] = useState(false);
+
     // Filters
     const [filters, setFilters] = useState({
         startDate: '',
@@ -406,6 +425,7 @@ function Transactions() {
 
             const res = await axios.get(`/api/transactions?${params.toString()}`);
             setTransactions(res.data.transactions || []);
+            setSelectedIds(new Set()); // Clear selection when transactions change
         } catch (err) {
             console.error('Error fetching transactions:', err);
         } finally {
@@ -441,6 +461,51 @@ function Transactions() {
             fetchTransactions();
         } catch (err) {
             console.error('Error deleting transaction:', err);
+        }
+    };
+
+    // Selection handlers
+    const handleToggleSelect = (id) => {
+        setSelectedIds(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(id)) {
+                newSet.delete(id);
+            } else {
+                newSet.add(id);
+            }
+            return newSet;
+        });
+    };
+
+    const handleSelectAll = () => {
+        if (selectedIds.size === transactions.length) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(transactions.map(t => t.id)));
+        }
+    };
+
+    const handleClearSelection = () => {
+        setSelectedIds(new Set());
+        setBulkCategoryId('');
+    };
+
+    const handleBulkCategoryChange = async () => {
+        if (!bulkCategoryId || selectedIds.size === 0) return;
+
+        setApplyingBulk(true);
+        try {
+            await axios.put('/api/transactions/bulk/category', {
+                transactionIds: Array.from(selectedIds),
+                categoryId: bulkCategoryId
+            });
+            fetchTransactions();
+            handleClearSelection();
+        } catch (err) {
+            console.error('Error applying bulk category:', err);
+            alert(err.response?.data?.error || 'Failed to update categories');
+        } finally {
+            setApplyingBulk(false);
         }
     };
 
@@ -593,7 +658,7 @@ function Transactions() {
                                 }}
                             >
                                 <option value="" style={{ backgroundColor: '#1a1a2e', color: '#e0e0e0' }}>All accounts</option>
-                                {accounts.map((acc) => (
+                                {accounts.filter(acc => acc.is_active).map((acc) => (
                                     <option key={acc.id} value={acc.id} style={{ backgroundColor: '#1a1a2e', color: '#e0e0e0' }}>
                                         {acc.institution_name} ···{acc.mask}
                                     </option>
@@ -637,15 +702,45 @@ function Transactions() {
             {/* Transactions List */}
             <div className="card glass-card" style={{ overflow: 'hidden' }}>
                 {transactions.length > 0 ? (
-                    transactions.map((transaction) => (
-                        <TransactionRow
-                            key={transaction.id}
-                            transaction={transaction}
-                            categories={categories}
-                            onCategoryChange={fetchTransactions}
-                            onDelete={handleDeleteTransaction}
-                        />
-                    ))
+                    <>
+                        {/* Header row with select all */}
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            padding: '0.75rem 1rem',
+                            borderBottom: '2px solid var(--border)',
+                            backgroundColor: 'var(--bg-secondary)',
+                            gap: '1rem'
+                        }}>
+                            <input
+                                type="checkbox"
+                                checked={selectedIds.size === transactions.length && transactions.length > 0}
+                                onChange={handleSelectAll}
+                                style={{
+                                    width: '18px',
+                                    height: '18px',
+                                    cursor: 'pointer',
+                                    accentColor: 'var(--primary)'
+                                }}
+                            />
+                            <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+                                {selectedIds.size > 0
+                                    ? `${selectedIds.size} selected`
+                                    : 'Select all'}
+                            </span>
+                        </div>
+                        {transactions.map((transaction) => (
+                            <TransactionRow
+                                key={transaction.id}
+                                transaction={transaction}
+                                categories={categories}
+                                onCategoryChange={fetchTransactions}
+                                onDelete={handleDeleteTransaction}
+                                isSelected={selectedIds.has(transaction.id)}
+                                onToggleSelect={handleToggleSelect}
+                            />
+                        ))}
+                    </>
                 ) : (
                     <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                         <p>No transactions found.</p>
@@ -655,6 +750,67 @@ function Transactions() {
                     </div>
                 )}
             </div>
+
+            {/* Floating Action Bar for Bulk Actions */}
+            {selectedIds.size > 0 && (
+                <div style={{
+                    position: 'fixed',
+                    bottom: '2rem',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    backgroundColor: '#1a1a2e',
+                    border: '1px solid var(--border)',
+                    borderRadius: '12px',
+                    padding: '1rem 1.5rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '1rem',
+                    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
+                    zIndex: 100
+                }}>
+                    <span style={{ fontWeight: '500' }}>
+                        {selectedIds.size} transaction{selectedIds.size > 1 ? 's' : ''} selected
+                    </span>
+                    <div style={{ width: '1px', height: '24px', backgroundColor: 'var(--border)' }} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <label style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>Category:</label>
+                        <CategorySelect
+                            categories={categories}
+                            value={bulkCategoryId}
+                            onChange={setBulkCategoryId}
+                            placeholder="Select category"
+                        />
+                    </div>
+                    <button
+                        onClick={handleBulkCategoryChange}
+                        disabled={!bulkCategoryId || applyingBulk}
+                        style={{
+                            padding: '0.5rem 1rem',
+                            backgroundColor: bulkCategoryId ? 'var(--primary)' : 'var(--bg-secondary)',
+                            color: bulkCategoryId ? 'white' : 'var(--text-muted)',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: bulkCategoryId && !applyingBulk ? 'pointer' : 'not-allowed',
+                            fontWeight: '500'
+                        }}
+                    >
+                        {applyingBulk ? 'Applying...' : 'Apply'}
+                    </button>
+                    <button
+                        onClick={handleClearSelection}
+                        style={{
+                            padding: '0.5rem 0.75rem',
+                            backgroundColor: 'transparent',
+                            color: 'var(--text-muted)',
+                            border: '1px solid var(--border)',
+                            borderRadius: '6px',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        Clear
+                    </button>
+                </div>
+            )}
 
             <AddTransactionModal
                 isOpen={showAddModal}
