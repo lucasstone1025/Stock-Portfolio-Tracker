@@ -1,6 +1,7 @@
 # TrendTracker 📈
 
 > An all-in-one finance management platform for tracking stocks, managing budgets, and achieving financial goals.
+> Made solely by Lucas Stone, CS student at Florida State University
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org/)
@@ -525,8 +526,8 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 **Lucas Stone**
 
-- GitHub: [@yourusername](https://github.com/yourusername)
-- Email: lucasstone49@gmail.com
+- GitHub: [@lucasstone1025](https://github.com/lucasstone1025)
+- Email: lucasstone1025@gmail.com
 
 ## 🙏 Acknowledgments
 
