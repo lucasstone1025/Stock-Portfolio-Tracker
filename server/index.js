@@ -1491,12 +1491,18 @@ app.post("/api/plaid/accounts/:id/disconnect", isAuthenticated, async (req, res)
       console.log("[Plaid] Item may already be disconnected:", e.message);
     }
     
+    // Delete transactions associated with this bank account
+    await db.query(
+      `DELETE FROM transactions WHERE account_id = $1 AND user_id = $2`,
+      [accountId, req.user.id]
+    );
+
     // Mark as inactive in our database
     await db.query(
       `UPDATE bank_accounts SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
       [accountId]
     );
-    
+
     // Log disconnection
     await auditLogService.logBankDisconnection(db, req, req.user.id, accountId);
     
@@ -1644,6 +1650,42 @@ app.post("/api/transactions/manual", isAuthenticated, validators.createTransacti
   } catch (err) {
     console.error("Error creating transaction:", err);
     res.status(500).json({ error: "Failed to create transaction" });
+  }
+});
+
+// Bulk update transaction categories (must be before :id routes)
+app.put("/api/transactions/bulk/category", isAuthenticated, async (req, res) => {
+  const { transactionIds, categoryId } = req.body;
+
+  if (!Array.isArray(transactionIds) || transactionIds.length === 0) {
+    return res.status(400).json({ error: "transactionIds must be a non-empty array" });
+  }
+
+  if (!categoryId) {
+    return res.status(400).json({ error: "categoryId is required" });
+  }
+
+  try {
+    // Verify all transactions belong to the user
+    const txResult = await db.query(
+      `SELECT id FROM transactions WHERE id = ANY($1) AND user_id = $2`,
+      [transactionIds, req.user.id]
+    );
+
+    if (txResult.rows.length !== transactionIds.length) {
+      return res.status(403).json({ error: "Some transactions not found or access denied" });
+    }
+
+    // Bulk update
+    await db.query(
+      `UPDATE transactions SET category_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = ANY($2) AND user_id = $3`,
+      [categoryId, transactionIds, req.user.id]
+    );
+
+    res.json({ message: `Updated ${transactionIds.length} transactions` });
+  } catch (err) {
+    console.error("Error bulk updating transaction categories:", err);
+    res.status(500).json({ error: "Failed to update categories" });
   }
 });
 
