@@ -582,7 +582,18 @@ app.get("/api/chart/:symbol", isAuthenticated, async (req, res) => {
   let scriptPath;
 
   if (process.env.NODE_ENV == "production") {
-    scriptPath = process.env.SCRIPT_PATH || path.join(__dirname, 'scripts', 'get-json-stock-data.py');
+    // In Docker/production, try multiple possible paths
+    const possiblePaths = [
+      process.env.SCRIPT_PATH,
+      '/usr/src/app/scripts/get-json-stock-data.py',
+      path.join(__dirname, 'scripts', 'get-json-stock-data.py')
+    ];
+    // Find the first path that exists
+    scriptPath = possiblePaths.find(p => p && fs.existsSync(p));
+    // If none exist, use the standard path (will be checked later)
+    if (!scriptPath) {
+      scriptPath = path.join(__dirname, 'scripts', 'get-json-stock-data.py');
+    }
   } else {
     scriptPath = path.join(__dirname, 'scripts', 'get-json-stock-data.py');
   }

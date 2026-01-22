@@ -20,25 +20,16 @@ function Landing() {
                 <div style={{
                     fontSize: '1.5rem',
                     fontWeight: 700,
-                    color: '#6366f1',
+                    color: '#10b981',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '0.5rem'
                 }}>
-                    <div style={{
-                        width: '32px',
-                        height: '32px',
-                        background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                        borderRadius: '8px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                    }}>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                            <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
-                            <polyline points="16 7 22 7 22 13"></polyline>
-                        </svg>
-                    </div>
+                    <img 
+                        src="/trendtracker_icon_1024.png" 
+                        alt="TrendTracker" 
+                        style={{ width: '32px', height: '32px', borderRadius: '8px' }}
+                    />
                     TrendTracker
                 </div>
                 <div style={{ display: 'flex', gap: '1rem' }}>
@@ -58,7 +49,7 @@ function Landing() {
                         borderRadius: '8px',
                         fontWeight: 500,
                         textDecoration: 'none',
-                        background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                        background: 'linear-gradient(135deg, #10b981, #059669)',
                         color: 'white',
                         border: 'none'
                     }}>
@@ -78,7 +69,7 @@ function Landing() {
                     fontSize: 'clamp(2.5rem, 5vw, 3.5rem)',
                     fontWeight: 700,
                     marginBottom: '1.5rem',
-                    background: 'linear-gradient(135deg, #fff 0%, #a5b4fc 100%)',
+                    background: 'linear-gradient(135deg, #fff 0%, #34d399 100%)',
                     WebkitBackgroundClip: 'text',
                     WebkitTextFillColor: 'transparent',
                     backgroundClip: 'text'
@@ -101,7 +92,7 @@ function Landing() {
                         borderRadius: '8px',
                         fontWeight: 500,
                         textDecoration: 'none',
-                        background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                        background: 'linear-gradient(135deg, #10b981, #059669)',
                         color: 'white',
                         border: 'none'
                     }}>
@@ -167,7 +158,7 @@ function Landing() {
                             <div style={{
                                 width: '56px',
                                 height: '56px',
-                                background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.2))',
+                                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.2))',
                                 borderRadius: '12px',
                                 display: 'flex',
                                 alignItems: 'center',
@@ -217,7 +208,7 @@ function Landing() {
                                 <div style={{
                                     width: '48px',
                                     height: '48px',
-                                    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                                    background: 'linear-gradient(135deg, #10b981, #059669)',
                                     borderRadius: '50%',
                                     display: 'flex',
                                     alignItems: 'center',
@@ -270,8 +261,8 @@ function Landing() {
                 <div style={{
                     maxWidth: '800px',
                     margin: '0 auto',
-                    background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1))',
-                    border: '1px solid rgba(99, 102, 241, 0.2)',
+                    background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 150, 105, 0.1))',
+                    border: '1px solid rgba(16, 185, 129, 0.2)',
                     borderRadius: '24px',
                     padding: '4rem',
                     textAlign: 'center'
@@ -286,7 +277,7 @@ function Landing() {
                         borderRadius: '8px',
                         fontWeight: 500,
                         textDecoration: 'none',
-                        background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                        background: 'linear-gradient(135deg, #10b981, #059669)',
                         color: 'white',
                         border: 'none',
                         display: 'inline-block'

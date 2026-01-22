@@ -6,18 +6,18 @@ import sys
 from pathlib import Path
 
 # Try to import pytz for timezone conversion, fallback to UTC if not available
+# pytz is more reliable in Docker environments than zoneinfo
+HAS_TIMEZONE = False
+EST = None
 try:
     import pytz
     EST = pytz.timezone('US/Eastern')
     HAS_TIMEZONE = True
-except ImportError:
-    try:
-        from zoneinfo import ZoneInfo
-        EST = ZoneInfo('America/New_York')
-        HAS_TIMEZONE = True
-    except (ImportError, Exception):
-        HAS_TIMEZONE = False
-        EST = None
+except (ImportError, Exception) as e:
+    # Don't try zoneinfo as it often fails in Docker
+    print(f"Warning: pytz not available: {e}. Timezone conversion disabled.")
+    HAS_TIMEZONE = False
+    EST = None
 
 # Period configurations: (yfinance_period, yfinance_interval)
 PERIOD_CONFIG = {
@@ -35,11 +35,34 @@ def get_stock_data(ticker, period='1w'):
     yf_period, yf_interval = PERIOD_CONFIG.get(period, ('7d', '15m'))
     print(f"DEBUG: Using yf_period={yf_period}, yf_interval={yf_interval}")
 
-    df = yf.download(
-            tickers=ticker,
-            period=yf_period,
-            interval=yf_interval,
-            auto_adjust=True)
+    # Suppress timezone warnings from yfinance
+    import warnings
+    import os
+    # Suppress all warnings from yfinance about timezones
+    warnings.filterwarnings('ignore')
+    # Set environment variable to prevent yfinance from trying to use zoneinfo
+    os.environ['TZ'] = 'UTC'
+    
+    try:
+        df = yf.download(
+                tickers=ticker,
+                period=yf_period,
+                interval=yf_interval,
+                auto_adjust=True,
+                progress=False)
+    except Exception as e:
+        print(f"Warning: Error during download: {e}")
+        # Try again without auto_adjust if it fails
+        try:
+            df = yf.download(
+                    tickers=ticker,
+                    period=yf_period,
+                    interval=yf_interval,
+                    auto_adjust=False,
+                    progress=False)
+        except Exception as e2:
+            print(f"Error: Failed to download data: {e2}")
+            return json.dumps({'labels': [], 'data': []})
 
     if df.empty:
         return json.dumps({'labels': [], 'data': []})
