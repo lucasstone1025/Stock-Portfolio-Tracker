@@ -582,7 +582,7 @@ app.get("/api/chart/:symbol", isAuthenticated, async (req, res) => {
   let scriptPath;
 
   if (process.env.NODE_ENV == "production") {
-    scriptPath = process.env.SCRIPT_PATH;
+    scriptPath = process.env.SCRIPT_PATH || path.join(__dirname, 'scripts', 'get-json-stock-data.py');
   } else {
     scriptPath = path.join(__dirname, 'scripts', 'get-json-stock-data.py');
   }

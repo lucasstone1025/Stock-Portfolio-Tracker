@@ -5,6 +5,20 @@ import sys
 
 from pathlib import Path
 
+# Try to import pytz for timezone conversion, fallback to UTC if not available
+try:
+    import pytz
+    EST = pytz.timezone('US/Eastern')
+    HAS_TIMEZONE = True
+except ImportError:
+    try:
+        from zoneinfo import ZoneInfo
+        EST = ZoneInfo('America/New_York')
+        HAS_TIMEZONE = True
+    except (ImportError, Exception):
+        HAS_TIMEZONE = False
+        EST = None
+
 # Period configurations: (yfinance_period, yfinance_interval)
 PERIOD_CONFIG = {
     '1h': ('1d', '1m'),      # Last day with 5-min intervals (shows ~1 hour of recent data)
@@ -36,9 +50,17 @@ def get_stock_data(ticker, period='1w'):
     df = df.rename(columns={date_col: 'Date'})
     df.columns = df.columns.get_level_values(0)
 
-    # Convert UTC to EST
-    if df['Date'].dt.tz is not None:
-        df['Date'] = df['Date'].dt. tz_convert('America/New_York')
+    # Convert UTC to EST if timezone support is available
+    if df['Date'].dt.tz is not None and HAS_TIMEZONE and EST is not None:
+        try:
+            df['Date'] = df['Date'].dt.tz_convert(EST)
+        except Exception as e:
+            # If timezone conversion fails, just remove timezone info
+            print(f"Warning: Timezone conversion failed: {e}. Using UTC time.")
+            df['Date'] = df['Date'].dt.tz_localize(None)
+    elif df['Date'].dt.tz is not None:
+        # Remove timezone info if we can't convert
+        df['Date'] = df['Date'].dt.tz_localize(None)
 
     #for 1h slice to show only last hour
     if period == '1h':

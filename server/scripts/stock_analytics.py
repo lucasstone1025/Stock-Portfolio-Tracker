@@ -5,6 +5,20 @@ import json
 import sys
 from pathlib import Path
 
+# Try to import pytz for timezone conversion, fallback to UTC if not available
+try:
+    import pytz
+    EST = pytz.timezone('US/Eastern')
+    HAS_TIMEZONE = True
+except ImportError:
+    try:
+        from zoneinfo import ZoneInfo
+        EST = ZoneInfo('America/New_York')
+        HAS_TIMEZONE = True
+    except (ImportError, Exception):
+        HAS_TIMEZONE = False
+        EST = None
+
 # Period configurations: (yfinance_period, yfinance_interval)
 PERIOD_CONFIG = {
     '1h': ('1d', '1m'),
@@ -131,13 +145,25 @@ def get_stock_analytics(ticker, period='1w'):
     yf_period, yf_interval = PERIOD_CONFIG.get(period, ('7d', '15m'))
     print(f"DEBUG: Using yf_period={yf_period}, yf_interval={yf_interval}")
     
-    # Download stock data
-    df = yf.download(
-        tickers=ticker,
-        period=yf_period,
-        interval=yf_interval,
-        auto_adjust=True
-    )
+    # Download stock data - suppress timezone warnings
+    try:
+        df = yf.download(
+            tickers=ticker,
+            period=yf_period,
+            interval=yf_interval,
+            auto_adjust=True,
+            progress=False
+        )
+    except Exception as e:
+        print(f"Warning: Error during download: {e}")
+        # Try again without auto_adjust if it fails
+        df = yf.download(
+            tickers=ticker,
+            period=yf_period,
+            interval=yf_interval,
+            auto_adjust=False,
+            progress=False
+        )
     
     if df.empty:
         return json.dumps({'error': 'No data available'})
@@ -146,6 +172,19 @@ def get_stock_analytics(ticker, period='1w'):
     date_col = 'Datetime' if 'Datetime' in df.columns else 'Date'
     df = df.rename(columns={date_col: 'Date'})
     df.columns = df.columns.get_level_values(0)
+    
+    # Handle timezone if present - remove it to avoid issues
+    if df['Date'].dt.tz is not None:
+        try:
+            if HAS_TIMEZONE and EST is not None:
+                df['Date'] = df['Date'].dt.tz_convert(EST)
+            else:
+                # Just remove timezone info if we can't convert
+                df['Date'] = df['Date'].dt.tz_localize(None)
+        except Exception as e:
+            # If timezone conversion fails, remove timezone info
+            print(f"Warning: Timezone conversion failed: {e}. Using UTC time.")
+            df['Date'] = df['Date'].dt.tz_localize(None)
     
     prices = df['Close']
     
