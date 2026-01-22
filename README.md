@@ -6,7 +6,16 @@
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org/)
 [![React Version](https://img.shields.io/badge/react-19.2.0-blue)](https://reactjs.org/)
 
+**Live Demo:** [https://trendtracker.co](https://trendtracker.co)
+
 ## 🌟 Features
+
+### Landing Page
+- **Modern Marketing Page** - Sleek gradient design showcasing all platform features
+- **Feature Highlights** - Clear presentation of stock tracking, budget management, and alert capabilities
+- **How It Works Guide** - Step-by-step onboarding flow for new users
+- **Security Badges** - Trust indicators highlighting Plaid integration and encryption standards
+- **Responsive Design** - Optimized for all device sizes
 
 ### Stock Market Management
 - **Real-Time Stock Tracking** - Live stock quotes powered by Finnhub API with intelligent caching
@@ -193,12 +202,23 @@ Access the application at `http://localhost:5173`
 ### Production Mode with Docker
 
 ```bash
-# Set environment variables
+# Set environment variables (or create .env file next to docker-compose.yml)
 export POSTGRES_PASSWORD=your_secure_password
 
-# Build and start all services
-docker-compose up --build
+# Build and start all services in detached mode
+docker compose up -d --build
+
+# Run database migrations (first time only)
+docker exec -it <app_container_name> node scripts/migrate_budget.js
+
+# View logs
+docker logs -f <app_container_name>
+
+# Stop services
+POSTGRES_PASSWORD=x docker compose down
 ```
+
+**Note:** For Docker deployments, set `DB_HOST=db` in your server `.env` file (not `localhost`).
 
 Access the application at `http://localhost:3000`
 
@@ -228,6 +248,7 @@ Stock-Portfolio-Tracker/
 │   │   │   ├── Dashboard.jsx
 │   │   │   ├── FAQ.jsx
 │   │   │   ├── FindStocks.jsx
+│   │   │   ├── Landing.jsx      # Marketing landing page
 │   │   │   ├── Login.jsx
 │   │   │   ├── Register.jsx
 │   │   │   ├── Search.jsx
@@ -474,6 +495,18 @@ lsof -ti:5173 | xargs kill -9  # Frontend
 - Ensure `PLAID_ENV` matches your credentials
 - Check webhook URL is accessible (use ngrok for local testing)
 
+**Docker "relation does not exist" errors:**
+- Database tables haven't been created yet
+- Run migrations: `docker exec -it <app_container> node scripts/migrate_budget.js`
+
+**Docker "POSTGRES_PASSWORD is missing" error:**
+- Set the environment variable: `export POSTGRES_PASSWORD=your_password`
+- Or create a `.env` file next to `docker-compose.yml` with `POSTGRES_PASSWORD=your_password`
+
+**Docker database connection refused:**
+- Ensure `DB_HOST=db` in your server `.env` (not `localhost`)
+- In Docker Compose, containers connect by service name, not localhost
+
 ## 🤝 Contributing
 
 This is a personal project, but suggestions and feedback are welcome!
@@ -508,6 +541,10 @@ Coming soon...
 
 ## 🗺️ Roadmap
 
+- [x] Landing page with marketing content
+- [x] Plaid bank account integration
+- [x] Budget management and tracking
+- [x] Spending analytics and trends
 - [ ] Mobile app (React Native)
 - [ ] Cryptocurrency tracking
 - [ ] Investment portfolio analysis

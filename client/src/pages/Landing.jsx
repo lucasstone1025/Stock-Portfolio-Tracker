@@ -303,7 +303,7 @@ function Landing() {
                 textAlign: 'center',
                 color: '#6b7280'
             }}>
-                <p>&copy; 2025 TrendTracker. All rights reserved.</p>
+                <p>&copy; 2026 TrendTracker. All rights reserved.</p>
                 <p style={{ marginTop: '0.5rem' }}>
                     <a href="mailto:support@trendtracker.co" style={{ color: '#9ca3af', textDecoration: 'none' }}>
                         Contact Support
