@@ -1,14 +1,17 @@
+import { safeExternalUrl, safeImageUrl } from '../utils/formatters';
 
 const NewsCard = ({ news }) => {
+    const href = safeExternalUrl(news?.url);
+    const imgSrc = safeImageUrl(news?.image);
     return (
-        <a href={news.url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', textDecoration: 'none' }}>
+        <a href={href} target="_blank" rel="noopener noreferrer" style={{ display: 'block', textDecoration: 'none' }}>
             <div className="card glass-card" style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden', transition: 'transform 0.2s', cursor: 'pointer' }}
                 onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-5px)'}
                 onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
             >
-                {news.image && (
+                {imgSrc && (
                     <div style={{ height: '150px', overflow: 'hidden' }}>
-                        <img src={news.image} alt={news.headline} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <img src={imgSrc} alt={news.headline || ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     </div>
                 )}
                 <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', flex: 1 }}>

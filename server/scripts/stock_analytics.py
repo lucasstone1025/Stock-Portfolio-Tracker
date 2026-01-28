@@ -114,30 +114,6 @@ def calculate_trend(prices):
         'direction': 'up' if slope > 0 else 'down'
     }
 
-def simple_price_prediction(prices, periods=1):
-    """Simple next-day prediction using moving average"""
-    if len(prices) < 10:
-        return None
-    
-    # Use exponential moving average for prediction
-    ema = prices.ewm(span=10, adjust=False).mean()
-    last_ema = ema.iloc[-1]
-    last_price = prices.iloc[-1]
-    
-    # Simple momentum-based prediction
-    momentum = (last_price - prices.iloc[-5:].mean()) / prices.iloc[-5:].mean()
-    predicted_price = last_price * (1 + momentum * 0.5)
-    
-    # Confidence based on recent volatility
-    recent_std = prices.iloc[-10:].std()
-    confidence = max(0, min(100, 100 - (recent_std / last_price * 1000)))
-    
-    return {
-        'predicted_price': float(predicted_price),
-        'confidence': float(confidence),
-        'method': 'momentum_ema'
-    }
-
 def get_stock_analytics(ticker, period='1w'):
     """Main function to calculate all analytics"""
     print(f"DEBUG: get_stock_analytics called with ticker={ticker}, period={period}")
@@ -233,7 +209,6 @@ def get_stock_analytics(ticker, period='1w'):
     stats = calculate_statistics(prices)
     volatility = calculate_volatility(prices)
     trend = calculate_trend(prices)
-    prediction = simple_price_prediction(prices)
     
     # Moving averages current values
     ma_current = {
@@ -266,8 +241,7 @@ def get_stock_analytics(ticker, period='1w'):
         },
         'statistics': stats,
         'volatility': volatility,
-        'trend': trend,
-        'prediction': prediction
+        'trend': trend
     }
     
     return json.dumps(analytics, indent=2)

@@ -1,6 +1,16 @@
 import { Link } from 'react-router-dom';
 
-function StockAnalytics({ analytics, loading, error }) {
+function formatMarketCap(val) {
+    if (val == null || val === undefined || Number.isNaN(Number(val))) return 'N/A';
+    const n = Number(val);
+    if (n >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
+    if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
+    if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
+    if (n >= 1e3) return `$${(n / 1e3).toFixed(2)}K`;
+    return `$${n.toFixed(0)}`;
+}
+
+function StockAnalytics({ stock, analytics, loading, error }) {
     if (loading) {
         return (
             <div className="card glass-card" style={{ padding: '2rem', minHeight: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -9,23 +19,13 @@ function StockAnalytics({ analytics, loading, error }) {
         );
     }
 
-    if (error) {
+    if (!stock && !analytics) {
         return (
             <div className="card glass-card" style={{ padding: '2rem', minHeight: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div className="text-danger">Failed to load analytics</div>
+                <div className="text-muted">No data available</div>
             </div>
         );
     }
-
-    if (!analytics) {
-        return (
-            <div className="card glass-card" style={{ padding: '2rem', minHeight: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div className="text-muted">No analytics data available</div>
-            </div>
-        );
-    }
-
-    const { technical_indicators, statistics, volatility, trend, prediction } = analytics;
 
     const formatValue = (value) => {
         if (value === null || value === undefined) return 'N/A';
@@ -34,8 +34,8 @@ function StockAnalytics({ analytics, loading, error }) {
 
     const getRSIColor = (rsi) => {
         if (!rsi) return 'var(--text-muted)';
-        if (rsi > 70) return 'var(--danger)'; // Overbought
-        if (rsi < 30) return 'var(--success)'; // Oversold
+        if (rsi > 70) return 'var(--danger)';
+        if (rsi < 30) return 'var(--success)';
         return 'var(--text-main)';
     };
 
@@ -45,202 +45,132 @@ function StockAnalytics({ analytics, loading, error }) {
         return 'var(--text-muted)';
     };
 
+    const { technical_indicators, statistics, volatility, trend } = analytics || {};
+    const hasAnalytics = !!analytics && !error;
+
     return (
-        <div className="card glass-card" style={{ 
-            padding: '1.5rem', 
-            height: '100%', 
-            display: 'flex', 
+        <div className="card glass-card" style={{
+            padding: '1.5rem',
+            height: '100%',
+            display: 'flex',
             flexDirection: 'column',
             overflowY: 'auto',
             maxHeight: '600px'
         }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                <h2 style={{ margin: 0, fontSize: '1.5rem' }}>Analytics</h2>
-                <Link to="/faq" style={{ fontSize: '0.85rem', color: 'var(--primary)', textDecoration: 'none' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                <h2 style={{ margin: 0, fontSize: '1.35rem' }}>Analytics</h2>
+                <Link to="/faq" style={{ fontSize: '0.8rem', color: 'var(--primary)', textDecoration: 'none' }}>
                     Learn more →
                 </Link>
             </div>
-            
-            {/* Quick Summary - Key Metrics */}
-            <div style={{ 
-                marginBottom: '2rem', 
-                padding: '1rem', 
-                backgroundColor: 'rgba(59, 130, 246, 0.1)', 
+
+            {/* 1. Key metrics – consumer-friendly, always on top */}
+            {stock && (
+            <div style={{
+                marginBottom: '1.5rem',
+                padding: '1rem',
+                backgroundColor: 'rgba(16, 185, 129, 0.08)',
                 borderRadius: '0.5rem',
-                border: '1px solid rgba(59, 130, 246, 0.2)'
+                border: '1px solid rgba(16, 185, 129, 0.2)'
             }}>
-                <h3 style={{ fontSize: '1rem', marginTop: 0, marginBottom: '1rem', color: 'var(--primary)' }}>
-                    Quick Summary
+                <h3 style={{ fontSize: '0.95rem', marginTop: 0, marginBottom: '1rem', color: 'var(--success)' }}>
+                    At a glance
                 </h3>
-                
-                {/* Volatility */}
-                {volatility !== null && volatility !== undefined && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                        <span className="text-muted" style={{ fontSize: '0.9rem' }}>Volatility</span>
-                        <span style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>
-                            {formatValue(volatility)}%
-                        </span>
-                    </div>
-                )}
-
-                {/* Trend Direction */}
-                {trend && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                        <span className="text-muted" style={{ fontSize: '0.9rem' }}>Trend</span>
-                        <span style={{ color: getSignalColor(trend.direction), fontWeight: 'bold', fontSize: '1.1rem' }}>
-                            {trend.direction?.toUpperCase()}
-                        </span>
-                    </div>
-                )}
-
-                {/* RSI Signal */}
-                {technical_indicators?.rsi && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span className="text-muted" style={{ fontSize: '0.9rem' }}>RSI Signal</span>
-                        <span style={{ 
-                            color: getRSIColor(technical_indicators.rsi.value), 
-                            fontWeight: 'bold',
-                            fontSize: '1.1rem'
-                        }}>
-                            {technical_indicators.rsi.signal?.toUpperCase()}
-                        </span>
-                    </div>
-                )}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem 1rem' }}>
+                    {stock?.marketcap != null && (
+                        <div>
+                            <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: '0.2rem' }}>Market cap</div>
+                            <div style={{ fontWeight: '600', fontSize: '1rem' }}>{formatMarketCap(stock.marketcap)}</div>
+                        </div>
+                    )}
+                    {(stock?.changePercent != null && !Number.isNaN(Number(stock.changePercent))) && (
+                        <div>
+                            <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: '0.2rem' }}>Today</div>
+                            <div style={{
+                                fontWeight: '600',
+                                fontSize: '1rem',
+                                color: Number(stock.changePercent) >= 0 ? 'var(--success)' : 'var(--danger)'
+                            }}>
+                                {Number(stock.changePercent) >= 0 ? '+' : ''}{Number(stock.changePercent).toFixed(2)}%
+                            </div>
+                        </div>
+                    )}
+                    {stock?.open != null && !Number.isNaN(Number(stock.open)) && (
+                        <div>
+                            <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: '0.2rem' }}>Open</div>
+                            <div style={{ fontWeight: '600', fontSize: '1rem' }}>${formatValue(stock.open)}</div>
+                        </div>
+                    )}
+                    {stock?.previousClose != null && !Number.isNaN(Number(stock.previousClose)) && (
+                        <div>
+                            <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: '0.2rem' }}>Prev close</div>
+                            <div style={{ fontWeight: '600', fontSize: '1rem' }}>${formatValue(stock.previousClose)}</div>
+                        </div>
+                    )}
+                    {stock?.dayhigh != null && (
+                        <div>
+                            <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: '0.2rem' }}>High</div>
+                            <div style={{ fontWeight: '600', fontSize: '1rem' }}>${formatValue(stock.dayhigh)}</div>
+                        </div>
+                    )}
+                    {stock?.daylow != null && (
+                        <div>
+                            <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: '0.2rem' }}>Low</div>
+                            <div style={{ fontWeight: '600', fontSize: '1rem' }}>${formatValue(stock.daylow)}</div>
+                        </div>
+                    )}
+                    {stock?.price != null && (
+                        <div>
+                            <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: '0.2rem' }}>Close</div>
+                            <div style={{ fontWeight: '600', fontSize: '1rem' }}>${formatValue(stock.price)}</div>
+                        </div>
+                    )}
+                    {stock?.sector && (
+                        <div style={{ gridColumn: '1 / -1' }}>
+                            <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: '0.2rem' }}>Sector</div>
+                            <div style={{ fontWeight: '600', fontSize: '0.95rem' }}>{stock.sector}</div>
+                        </div>
+                    )}
+                </div>
             </div>
+            )}
 
-            {/* Technical Indicators - Simplified */}
-            {technical_indicators && (
-                <div style={{ marginBottom: '2rem' }}>
-                    <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem', color: 'var(--text-main)' }}>
-                        Technical Indicators
-                    </h3>
-                    
-                    {/* RSI - Simplified */}
-                    {technical_indicators.rsi && technical_indicators.rsi.value && (
-                        <div style={{ 
-                            marginBottom: '1rem', 
-                            padding: '0.75rem', 
-                            backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                            borderRadius: '0.375rem'
-                        }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                                <span style={{ fontWeight: '500' }}>RSI</span>
-                                <span style={{ color: getRSIColor(technical_indicators.rsi.value), fontWeight: 'bold', fontSize: '1.1rem' }}>
-                                    {formatValue(technical_indicators.rsi.value)}
-                                </span>
-                            </div>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                                Signal: <span style={{ color: getSignalColor(technical_indicators.rsi.signal) }}>
-                                    {technical_indicators.rsi.signal?.toUpperCase()}
-                                </span>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* MACD - Simplified */}
-                    {technical_indicators.macd && technical_indicators.macd.macd_line && (
-                        <div style={{ 
-                            marginBottom: '1rem', 
-                            padding: '0.75rem', 
-                            backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                            borderRadius: '0.375rem'
-                        }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                                <span style={{ fontWeight: '500' }}>MACD</span>
-                                <span style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>
-                                    {formatValue(technical_indicators.macd.macd_line)}
-                                </span>
-                            </div>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                                Trend: <span style={{ color: getSignalColor(technical_indicators.macd.signal) }}>
-                                    {technical_indicators.macd.signal?.toUpperCase()}
-                                </span>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Bollinger Bands - Simplified */}
-                    {technical_indicators.bollinger_bands && technical_indicators.bollinger_bands.middle && (
-                        <div style={{ 
-                            padding: '0.75rem', 
-                            backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                            borderRadius: '0.375rem'
-                        }}>
-                            <div style={{ fontWeight: '500', marginBottom: '0.5rem' }}>Bollinger Bands</div>
-                            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.6' }}>
-                                <div>Upper: ${formatValue(technical_indicators.bollinger_bands.upper)}</div>
-                                <div>Middle: ${formatValue(technical_indicators.bollinger_bands.middle)}</div>
-                                <div>Lower: ${formatValue(technical_indicators.bollinger_bands.lower)}</div>
-                            </div>
-                        </div>
-                    )}
+            {error && (
+                <div className="text-danger" style={{ fontSize: '0.9rem', marginBottom: '1rem' }}>
+                    Analytics could not be loaded. Key metrics above are still shown.
                 </div>
             )}
 
-            {/* Statistics - Cleaned up */}
-            {statistics && (
-                <div style={{ marginBottom: '2rem' }}>
-                    <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem', color: 'var(--text-main)' }}>
-                        Price Statistics
+            {/* 2. Volatility, period range, trend */}
+            {hasAnalytics && (volatility != null || (statistics?.min != null && statistics?.max != null) || trend) && (
+                <div style={{
+                    marginBottom: '1.5rem',
+                    padding: '1rem',
+                    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                    borderRadius: '0.5rem',
+                    border: '1px solid var(--border)'
+                }}>
+                    <h3 style={{ fontSize: '0.95rem', marginTop: 0, marginBottom: '0.75rem', color: 'var(--text-main)' }}>
+                        This period
                     </h3>
-                    <div style={{ 
-                        display: 'grid', 
-                        gridTemplateColumns: '1fr 1fr', 
-                        gap: '0.75rem',
-                        padding: '1rem',
-                        backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                        borderRadius: '0.375rem'
-                    }}>
-                        <div>
-                            <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: '0.25rem' }}>Average</div>
-                            <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>${formatValue(statistics.mean)}</div>
-                        </div>
-                        <div>
-                            <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: '0.25rem' }}>Median</div>
-                            <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>${formatValue(statistics.median)}</div>
-                        </div>
-                        <div>
-                            <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: '0.25rem' }}>Low</div>
-                            <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>${formatValue(statistics.min)}</div>
-                        </div>
-                        <div>
-                            <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: '0.25rem' }}>High</div>
-                            <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>${formatValue(statistics.max)}</div>
-                        </div>
-                        <div>
-                            <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: '0.25rem' }}>Range</div>
-                            <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>${formatValue(statistics.range)}</div>
-                        </div>
-                        <div>
-                            <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: '0.25rem' }}>Std Dev</div>
-                            <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>${formatValue(statistics.std)}</div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Trend Analysis - Improved */}
-            {trend && (
-                <div style={{ marginBottom: '2rem' }}>
-                    <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem', color: 'var(--text-main)' }}>
-                        Trend Analysis
-                    </h3>
-                    <div style={{ 
-                        padding: '1rem',
-                        backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                        borderRadius: '0.375rem'
-                    }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                            <span className="text-muted" style={{ fontSize: '0.9rem' }}>Direction</span>
-                            <span style={{ color: getSignalColor(trend.direction), fontWeight: 'bold', fontSize: '1.1rem' }}>
-                                {trend.direction?.toUpperCase()}
-                            </span>
-                        </div>
-                        {trend.r_squared !== undefined && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span className="text-muted" style={{ fontSize: '0.9rem' }}>R² (Fit)</span>
-                                <span style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>
-                                    {formatValue(trend.r_squared)}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
+                        {volatility != null && (
+                            <div>
+                                <span className="text-muted" style={{ fontSize: '0.8rem' }}>Volatility </span>
+                                <span style={{ fontWeight: '600' }}>{formatValue(volatility)}%</span>
+                            </div>
+                        )}
+                        {statistics?.min != null && statistics?.max != null && (
+                            <div>
+                                <span className="text-muted" style={{ fontSize: '0.8rem' }}>Range </span>
+                                <span style={{ fontWeight: '600' }}>${formatValue(statistics.min)} – ${formatValue(statistics.max)}</span>
+                            </div>
+                        )}
+                        {trend?.direction && (
+                            <div>
+                                <span className="text-muted" style={{ fontSize: '0.8rem' }}>Trend </span>
+                                <span style={{ fontWeight: '600', color: getSignalColor(trend.direction) }}>
+                                    {trend.direction?.toUpperCase()}
                                 </span>
                             </div>
                         )}
@@ -248,46 +178,49 @@ function StockAnalytics({ analytics, loading, error }) {
                 </div>
             )}
 
-            {/* Prediction - Improved */}
-            {prediction && (
-                <div style={{ marginBottom: '1rem' }}>
-                    <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem', color: 'var(--text-main)' }}>
-                        Prediction
+            {/* 3. Technical indicators – compact, below everything else */}
+            {hasAnalytics && technical_indicators && (technical_indicators.rsi?.value != null || technical_indicators.macd?.macd_line != null || technical_indicators.bollinger_bands?.middle != null) && (
+                <div style={{
+                    marginBottom: '1rem',
+                    padding: '0.75rem',
+                    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                    borderRadius: '0.5rem',
+                    border: '1px solid var(--border)'
+                }}>
+                    <h3 style={{ fontSize: '0.85rem', marginTop: 0, marginBottom: '0.6rem', color: 'var(--text-muted)' }}>
+                        Technical indicators
                     </h3>
-                    <div style={{ 
-                        padding: '1rem',
-                        backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                        borderRadius: '0.375rem'
-                    }}>
-                        <div style={{ marginBottom: '0.75rem' }}>
-                            <div className="text-muted" style={{ fontSize: '0.85rem', marginBottom: '0.25rem' }}>Next Day Price</div>
-                            <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
-                                ${formatValue(prediction.predicted_price)}
+                    <Link to="/faq#technical-indicators" style={{ fontSize: '0.75rem', color: 'var(--primary)', textDecoration: 'none', marginBottom: '0.5rem', display: 'inline-block' }}>
+                        What do RSI, MACD &amp; Bollinger Bands mean? →
+                    </Link>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', fontSize: '0.8rem' }}>
+                        {technical_indicators.rsi?.value != null && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                                <span className="text-muted">RSI</span>
+                                <span style={{ fontWeight: '600', color: getRSIColor(technical_indicators.rsi.value) }}>
+                                    {formatValue(technical_indicators.rsi.value)}
+                                </span>
                             </div>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span className="text-muted" style={{ fontSize: '0.85rem' }}>Confidence</span>
-                            <span style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>
-                                {formatValue(prediction.confidence)}%
-                            </span>
-                        </div>
+                        )}
+                        {technical_indicators.macd?.macd_line != null && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                                <span className="text-muted">MACD</span>
+                                <span style={{ fontWeight: '600' }}>{formatValue(technical_indicators.macd.macd_line)}</span>
+                            </div>
+                        )}
+                        {technical_indicators.bollinger_bands?.middle != null && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                                <span className="text-muted">BB mid</span>
+                                <span style={{ fontWeight: '600' }}>${formatValue(technical_indicators.bollinger_bands.middle)}</span>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
 
             <div style={{ marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
-                <Link 
-                    to="/faq" 
-                    style={{ 
-                        fontSize: '0.85rem', 
-                        color: 'var(--primary)', 
-                        textDecoration: 'none',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.25rem'
-                    }}
-                >
-                    Need help understanding these metrics? Visit FAQ →
+                <Link to="/faq" style={{ fontSize: '0.8rem', color: 'var(--primary)', textDecoration: 'none' }}>
+                    FAQ: indicators, statistics &amp; budgeting →
                 </Link>
             </div>
         </div>

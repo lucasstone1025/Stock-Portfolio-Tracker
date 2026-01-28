@@ -71,9 +71,20 @@ export const plaidLimiter = rateLimit({
  * Transaction sync rate limiter
  */
 export const syncLimiter = rateLimit({
-    windowMs: 5 * 60 * 1000, // 5 minutes
-    max: 5, // 5 syncs per 5 minutes
-    message: { error: 'Please wait before syncing again.' },
+    windowMs: 24 * 60 * 60 * 1000, // 1 day
+    max: 3, // 3 syncs per day per IP
+    message: { error: 'Please wait before syncing again. Sync is limited to 3 per day.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+/**
+ * Phone verification (SMS) rate limiter
+ */
+export const phoneVerifyLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 5, // 5 codes per 15 minutes per IP
+    message: { error: 'Too many verification attempts. Please try again later.' },
     standardHeaders: true,
     legacyHeaders: false,
 });
@@ -84,12 +95,11 @@ export const syncLimiter = rateLimit({
 export const handleValidationErrors = (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+        const details = errors.array().map(err => ({ field: err.path, message: err.msg }));
+        const first = details[0]?.message;
         return res.status(400).json({
-            error: 'Validation failed',
-            details: errors.array().map(err => ({
-                field: err.path,
-                message: err.msg
-            }))
+            error: first || 'Validation failed',
+            details
         });
     }
     next();
@@ -156,6 +166,7 @@ export const validators = {
         query('endDate').optional().isISO8601().withMessage('Invalid end date'),
         query('categoryId').optional().isInt({ min: 1 }).withMessage('Invalid category ID'),
         query('accountId').optional().isInt({ min: 1 }).withMessage('Invalid account ID'),
+        query('search').optional().trim().isLength({ max: 200 }).withMessage('Search max 200 chars'),
         query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be 1-100'),
         query('offset').optional().isInt({ min: 0 }).withMessage('Offset must be non-negative'),
     ],
@@ -167,7 +178,48 @@ export const validators = {
     
     // Symbol parameter validator
     symbolParam: [
-        param('symbol').trim().isLength({ min: 1, max: 10 }).withMessage('Valid symbol is required'),
+        param('symbol').trim().isLength({ min: 1, max: 10 }).matches(/^[A-Za-z0-9.\-]+$/).withMessage('Valid symbol is required'),
+    ],
+
+    register: [
+        body('email').trim().isEmail().normalizeEmail().withMessage('Valid email is required'),
+        body('password').isLength({ min: 8, max: 128 }).withMessage('Password must be 8–128 characters'),
+        body('first_name').trim().isLength({ min: 1, max: 100 }).withMessage('First name is required (max 100 chars)'),
+        body('phone').optional({ values: 'null' }).trim().isLength({ max: 20 }).withMessage('Phone max 20 chars'),
+    ],
+
+    watchlistAdd: [
+        body('symbol').trim().isLength({ min: 1, max: 10 }).matches(/^[A-Za-z0-9.\-]+$/).withMessage('Valid symbol is required'),
+        body('price').isFloat({ min: 0 }).withMessage('Valid price is required'),
+        body('dayhigh').isFloat({ min: 0 }).withMessage('Valid day high is required'),
+        body('daylow').isFloat({ min: 0 }).withMessage('Valid day low is required'),
+        body('companyname').optional().trim().isLength({ max: 255 }).withMessage('Company name max 255 chars'),
+        body('marketcap').optional().isFloat({ min: 0 }).withMessage('Market cap must be non-negative'),
+        body('sector').optional().trim().isLength({ max: 100 }).withMessage('Sector max 100 chars'),
+    ],
+
+    alertCreate: [
+        body('symbol').trim().isLength({ min: 1, max: 10 }).matches(/^[A-Za-z0-9.\-]+$/).withMessage('Valid symbol is required'),
+        body('direction').isIn(['up', 'down']).withMessage('Direction must be up or down'),
+        body('target_price').isFloat({ min: 0.0001 }).withMessage('Target price must be a positive number'),
+        body('alert_method').optional().isIn(['email', 'sms', 'both']).withMessage('Alert method must be email, sms, or both'),
+    ],
+
+    alertDelete: [
+        body('alert_id').isInt({ min: 1 }).withMessage('Valid alert ID is required'),
+    ],
+
+    watchlistDelete: [
+        body('symbol').trim().isLength({ min: 1, max: 10 }).matches(/^[A-Za-z0-9.\-]+$/).withMessage('Valid symbol is required'),
+    ],
+
+    searchSuggest: [
+        query('q').optional().trim().isLength({ max: 100 }).withMessage('Query max 100 chars'),
+    ],
+
+    bulkCategory: [
+        body('transactionIds').isArray({ min: 1 }).withMessage('transactionIds must be a non-empty array'),
+        body('categoryId').isInt({ min: 1 }).withMessage('Valid category ID is required'),
     ],
 };
 
@@ -325,6 +377,7 @@ export default {
     authLimiter,
     plaidLimiter,
     syncLimiter,
+    phoneVerifyLimiter,
     handleValidationErrors,
     validators,
     createAuthorizationMiddleware,

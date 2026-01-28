@@ -26,6 +26,7 @@ import {
   authLimiter,
   plaidLimiter,
   syncLimiter,
+  phoneVerifyLimiter,
   handleValidationErrors,
   validators,
   createAuthorizationMiddleware
@@ -58,11 +59,33 @@ const PgSession = connectPgSimple(session);
 
 
 const app = express();
-app.set('trust proxy', 1); // trust proxy fix my problem!!
+app.set('trust proxy', 1);
+
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:3000',
+  'https://trendtracker.co',
+  'https://www.trendtracker.co'
+];
+if (process.env.FRONTEND_URL) allowedOrigins.push(process.env.FRONTEND_URL);
+
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    cb(null, false);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+app.use(helmetMiddleware);
+app.use(generalLimiter);
 
 // Body parsing middleware - must be before routes
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '256kb' }));
+app.use(express.urlencoded({ extended: true, limit: '256kb' }));
 
 const port = process.env.PORT || 3000;
 const saltRounds = 10;
@@ -101,10 +124,10 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    // Set 'secure' to true in production, false in development
     secure: isProduction,
-    sameSite: "lax", // 'lax' is a good default
-    maxAge: 1000 * 60 * 60 * 24 // 1 day
+    httpOnly: true,
+    sameSite: "lax",
+    maxAge: 1000 * 60 * 60 * 24
   }
 }));
 
@@ -218,8 +241,9 @@ async function checkAlertsAndNotify() {
 
             // Email
             if (alert.alert_method === 'email' || alert.alert_method === 'both' || !alert.alert_method) {
+              const fromEmail = process.env.EMAIL_USER || 'noreply@trendtracker.co';
               await transporter.sendMail({
-                from: '"TrendTracker" lucasstone49@gmail.com',
+                from: `"TrendTracker" <${fromEmail}>`,
                 to: alert.email,
                 subject: `Price Alert for ${alert.symbol}`,
                 text: messageText
@@ -568,12 +592,19 @@ app.get("/auth/google/callback",
 
 
 
+const VALID_SYMBOL = /^[A-Za-z0-9.\-]{1,10}$/;
+function validateSymbol(s) {
+  return typeof s === 'string' && s.length >= 1 && s.length <= 10 && VALID_SYMBOL.test(s);
+}
+
 app.get("/api/chart/:symbol", isAuthenticated, async (req, res) => {
+  const raw = req.params.symbol;
+  if (!validateSymbol(raw)) {
+    return res.status(400).json({ error: "Invalid symbol" });
+  }
+  const ticker = raw.toUpperCase();
+  const period = req.query.period || "1w";
 
-  const ticker = req.params.symbol.toUpperCase();
-  const period = req.query.period || "1w"; //default to 1 week
-
-  //validate period
   const validPeriods = ["1h", "1d", "1w", "1m", "3m", "6m"];
   if (!validPeriods.includes(period)) {
     return res.status(400).json({ error: "Invalid period" });
@@ -636,7 +667,7 @@ app.get("/api/chart/:symbol", isAuthenticated, async (req, res) => {
   python.on('error', (error) => {
     console.log('Spawn error:', error);
     if (!res.headersSent) {
-      return res.status(500).json({ error: `Failed to run Python: ${error.message}` });
+      return res.status(500).json({ error: 'Chart data temporarily unavailable. Please try again.' });
     }
   });
 
@@ -663,20 +694,23 @@ app.get("/api/chart/:symbol", isAuthenticated, async (req, res) => {
 
       } catch (err) {
         console.log('ERROR reading JSON:', err);
-        if (!res.headersSent) res.status(500).json({ error: `Failed to read stock data for ${ticker}.` });
+        if (!res.headersSent) res.status(500).json({ error: 'Chart data temporarily unavailable. Please try again.' });
       }
     } else {
       console.error(`Python script error: ${errorOutput}`);
-      if (!res.headersSent) res.status(500).json({ error: `Python script exited with code ${code}: ${errorOutput}` });
+      if (!res.headersSent) res.status(500).json({ error: 'Chart data temporarily unavailable. Please try again.' });
     }
   });
 });
 
 app.get("/api/analytics/:symbol", isAuthenticated, async (req, res) => {
-  const ticker = req.params.symbol.toUpperCase();
-  const period = req.query.period || "1w"; // default to 1 week
+  const raw = req.params.symbol;
+  if (!validateSymbol(raw)) {
+    return res.status(400).json({ error: "Invalid symbol" });
+  }
+  const ticker = raw.toUpperCase();
+  const period = req.query.period || "1w";
 
-  // validate period
   const validPeriods = ["1h", "1d", "1w", "1m", "3m", "6m"];
   if (!validPeriods.includes(period)) {
     return res.status(400).json({ error: "Invalid period" });
@@ -735,7 +769,7 @@ app.get("/api/analytics/:symbol", isAuthenticated, async (req, res) => {
   python.on('error', (error) => {
     console.log('[Analytics] Spawn error:', error);
     if (!res.headersSent) {
-      return res.status(500).json({ error: `Failed to run Python: ${error.message}` });
+      return res.status(500).json({ error: 'Analytics temporarily unavailable. Please try again.' });
     }
   });
 
@@ -766,11 +800,11 @@ app.get("/api/analytics/:symbol", isAuthenticated, async (req, res) => {
 
       } catch (err) {
         console.log('[Analytics] ERROR reading JSON:', err);
-        if (!res.headersSent) res.status(500).json({ error: `Failed to read analytics data for ${ticker}.` });
+        if (!res.headersSent) res.status(500).json({ error: 'Analytics temporarily unavailable. Please try again.' });
       }
     } else {
       console.error(`[Analytics] Python script error: ${errorOutput}`);
-      if (!res.headersSent) res.status(500).json({ error: `Analytics script exited with code ${code}: ${errorOutput}` });
+      if (!res.headersSent) res.status(500).json({ error: 'Analytics temporarily unavailable. Please try again.' });
     }
   });
 });
@@ -786,7 +820,7 @@ app.get("/api/user", (req, res) => {
   }
 });
 
-app.post("/api/login", (req, res, next) => {
+app.post("/api/login", authLimiter, (req, res, next) => {
   passport.authenticate("local", (err, user, info) => {
     if (err) return next(err);
     if (!user) return res.status(401).json({ error: "Invalid email or password" });
@@ -797,7 +831,7 @@ app.post("/api/login", (req, res, next) => {
   })(req, res, next);
 });
 
-app.post("/api/register", async (req, res) => {
+app.post("/api/register", authLimiter, validators.register, handleValidationErrors, async (req, res) => {
   const { email, password, first_name, phone } = req.body;
   try {
     const checkResult = await db.query("SELECT * FROM users WHERE email = $1", [email]);
@@ -848,8 +882,10 @@ app.get("/api/dashboard", isAuthenticated, async (req, res) => {
 
 app.get("/api/watchlist", isAuthenticated, async (req, res) => {
   const userId = req.user.id;
-  const filter = req.query.filter || "def";
-  const capFilter = req.query.capFilter || null;
+  const validFilters = ["def", "alpha", "asc", "desc"];
+  const validCaps = [null, "Small Cap", "Mid Cap", "Large Cap"];
+  const filter = validFilters.includes(req.query.filter) ? req.query.filter : "def";
+  const capFilter = validCaps.includes(req.query.capFilter) ? req.query.capFilter : null;
 
   let orderClause = "";
   if (filter === "alpha") {
@@ -901,7 +937,11 @@ app.get("/api/watchlist", isAuthenticated, async (req, res) => {
 
 app.get("/api/stock/:symbol", isAuthenticated, async (req, res) => {
   try {
-    const symbol = req.params.symbol.toUpperCase();
+    const raw = req.params.symbol;
+    if (!validateSymbol(raw)) {
+      return res.status(400).json({ error: "Invalid symbol" });
+    }
+    const symbol = raw.toUpperCase();
 
     // 1. Try DB first
     const sql = `
@@ -912,6 +952,26 @@ app.get("/api/stock/:symbol", isAuthenticated, async (req, res) => {
 
     if (rows.length > 0) {
       console.log(`[StockDetails] Found ${symbol} in DB`);
+      let change = null;
+      let changePercent = null;
+      let open = null;
+      let previousClose = null;
+      try {
+        const qRes = await axios.get("https://finnhub.io/api/v1/quote", {
+          params: { symbol: symbol, token: API_KEY }
+        });
+        const q = qRes.data;
+        if (q) {
+          if (q.d != null || q.dp != null) {
+            change = q.d != null ? parseFloat(q.d) : null;
+            changePercent = q.dp != null ? parseFloat(q.dp) : null;
+          }
+          if (q.o != null) open = parseFloat(q.o);
+          if (q.pc != null) previousClose = parseFloat(q.pc);
+        }
+      } catch (e) {
+        console.log(`[StockDetails] Quote fetch for change % failed: ${e.message}`);
+      }
       const stock = {
         symbol: rows[0].symbol,
         companyname: rows[0].companyname,
@@ -919,7 +979,11 @@ app.get("/api/stock/:symbol", isAuthenticated, async (req, res) => {
         price: parseFloat(rows[0].currentprice).toFixed(2),
         dayhigh: parseFloat(rows[0].dayhigh).toFixed(2),
         daylow: parseFloat(rows[0].daylow).toFixed(2),
-        sector: rows[0].sector
+        sector: rows[0].sector,
+        change,
+        changePercent,
+        open,
+        previousClose
       };
       return res.json(stock);
     }
@@ -952,7 +1016,11 @@ app.get("/api/stock/:symbol", isAuthenticated, async (req, res) => {
       price: data.c.toFixed(2),
       dayhigh: data.h.toFixed(2),
       daylow: data.l.toFixed(2),
-      sector: data2.finnhubIndustry || 'N/A'
+      sector: data2.finnhubIndustry || 'N/A',
+      change: data.d != null ? parseFloat(data.d) : null,
+      changePercent: data.dp != null ? parseFloat(data.dp) : null,
+      open: data.o != null ? parseFloat(data.o) : null,
+      previousClose: data.pc != null ? parseFloat(data.pc) : null
     };
     res.json(stock);
   } catch (err) {
@@ -1004,7 +1072,11 @@ app.get("/api/news", isAuthenticated, async (req, res) => {
 
 app.get("/api/news/:symbol", isAuthenticated, async (req, res) => {
   try {
-    const symbol = req.params.symbol.toUpperCase();
+    const raw = req.params.symbol;
+    if (!validateSymbol(raw)) {
+      return res.status(400).json({ error: "Invalid symbol" });
+    }
+    const symbol = raw.toUpperCase();
     const now = Date.now();
 
     // Check per-symbol cache first
@@ -1054,6 +1126,29 @@ app.get("/api/news/:symbol", isAuthenticated, async (req, res) => {
   }
 });
 
+app.get("/api/search/suggest", isAuthenticated, validators.searchSuggest, handleValidationErrors, async (req, res) => {
+  const q = (req.query.q || "").trim().slice(0, 100);
+  if (!q) return res.json({ results: [] });
+
+  try {
+    const response = await axios.get("https://finnhub.io/api/v1/search", {
+      params: { q, exchange: "US", token: API_KEY }
+    });
+    const data = response.data;
+    const raw = (data.result || []).slice(0, 12);
+    const results = raw.map((r) => ({
+      symbol: r.symbol || r.displaySymbol,
+      displaySymbol: r.displaySymbol || r.symbol,
+      description: r.description || "",
+      type: r.type || ""
+    }));
+    res.json({ results });
+  } catch (err) {
+    console.error("[SearchSuggest]", err.message);
+    res.status(500).json({ error: "Search failed", results: [] });
+  }
+});
+
 app.get("/api/search", isAuthenticated, async (req, res) => {
   const symbol = req.query.symbol;
   if (!symbol) return res.status(400).json({ error: "Symbol is required" });
@@ -1100,28 +1195,29 @@ app.get("/api/search", isAuthenticated, async (req, res) => {
   }
 });
 
-app.post("/api/watchlist/add", isAuthenticated, async (req, res) => {
+app.post("/api/watchlist/add", isAuthenticated, validators.watchlistAdd, handleValidationErrors, async (req, res) => {
   const { symbol, price, dayhigh, daylow, companyname, marketcap, sector } = req.body;
   const userId = req.user.id;
-  console.log(`[WatchlistAdd] Request to add ${symbol} for user ${userId}. MarketCap: ${marketcap}, Sector: ${sector}`);
+  const sym = String(symbol).trim().toUpperCase();
+  console.log(`[WatchlistAdd] Request to add ${sym} for user ${userId}. MarketCap: ${marketcap}, Sector: ${sector}`);
 
   try {
-    let result = await db.query("SELECT * FROM stocks WHERE symbol = $1", [symbol]);
+    let result = await db.query("SELECT * FROM stocks WHERE symbol = $1", [sym]);
     let stockId;
 
     if (result.rows.length !== 0) {
       stockId = result.rows[0].stockid;
-      console.log(`[WatchlistAdd] Stock ${symbol} already exists (ID: ${stockId})`);
+      console.log(`[WatchlistAdd] Stock ${sym} already exists (ID: ${stockId})`);
     } else {
-      console.log(`[WatchlistAdd] Inserting new stock ${symbol}...`);
+      console.log(`[WatchlistAdd] Inserting new stock ${sym}...`);
       const insert = await db.query(
         `INSERT INTO stocks (symbol, currentprice, dayhigh, daylow, companyname, marketcap, sector)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING stockid`,
-        [symbol, price, dayhigh, daylow, companyname, marketcap, sector]
+        [sym, price, dayhigh, daylow, companyname || '', marketcap ?? 0, sector || 'N/A']
       );
       stockId = insert.rows[0].stockid;
-      console.log(`[WatchlistAdd] Created new stock ${symbol} (ID: ${stockId})`);
+      console.log(`[WatchlistAdd] Created new stock ${sym} (ID: ${stockId})`);
     }
 
     await db.query(
@@ -1130,22 +1226,21 @@ app.post("/api/watchlist/add", isAuthenticated, async (req, res) => {
       ON CONFLICT DO NOTHING`,
       [userId, stockId]
     );
-    console.log(`[WatchlistAdd] Added ${symbol} to watchlist`);
+    console.log(`[WatchlistAdd] Added ${sym} to watchlist`);
     res.json({ message: "Added to watchlist" });
   } catch (err) {
-    console.error(`[WatchlistAdd] Error adding ${symbol}:`, err);
+    console.error(`[WatchlistAdd] Error adding ${sym}:`, err);
     res.status(500).json({ error: "Failed to add to watchlist" });
   }
 });
 
-app.post("/api/alerts/create", isAuthenticated, async (req, res) => {
-  const { symbol, direction, target_price, alert_method } = req.body; // 'email', 'sms', 'both'
+app.post("/api/alerts/create", isAuthenticated, validators.alertCreate, handleValidationErrors, async (req, res) => {
+  const { symbol, direction, target_price, alert_method } = req.body;
   const userId = req.user.id;
-
-  if (!symbol || !direction || !target_price) return res.status(400).json({ error: "Missing fields" });
+  const sym = String(symbol).trim().toUpperCase();
 
   try {
-    const stockResult = await db.query("SELECT stockid FROM stocks WHERE symbol = $1", [symbol]);
+    const stockResult = await db.query("SELECT stockid FROM stocks WHERE symbol = $1", [sym]);
 
     if (stockResult.rows.length > 0) {
       const stockId = stockResult.rows[0].stockid;
@@ -1192,7 +1287,7 @@ app.post("/api/alerts/check", isAuthenticated, async (req, res) => {
   }
 });
 
-app.post("/api/alerts/delete", isAuthenticated, async (req, res) => {
+app.post("/api/alerts/delete", isAuthenticated, validators.alertDelete, handleValidationErrors, async (req, res) => {
   const { alert_id } = req.body;
 
   try {
@@ -1209,12 +1304,13 @@ app.post("/api/alerts/delete", isAuthenticated, async (req, res) => {
 });
 
 
-app.post("/api/watchlist/delete", isAuthenticated, async (req, res) => {
+app.post("/api/watchlist/delete", isAuthenticated, validators.watchlistDelete, handleValidationErrors, async (req, res) => {
   const { symbol } = req.body;
   const userId = req.user.id;
+  const sym = String(symbol).trim().toUpperCase();
 
   try {
-    const stockResult = await db.query("SELECT stockid FROM stocks WHERE symbol = $1", [symbol]);
+    const stockResult = await db.query("SELECT stockid FROM stocks WHERE symbol = $1", [sym]);
     if (stockResult.rows.length > 0) {
       const stockId = stockResult.rows[0].stockid;
       await db.query("DELETE FROM watchlist WHERE user_id = $1 AND stock_id = $2", [userId, stockId]);
@@ -1258,7 +1354,7 @@ function cleanupExpiredCodes() {
   });
 }
 
-app.post("/api/settings/phone/send-code", isAuthenticated, async (req, res) => {
+app.post("/api/settings/phone/send-code", isAuthenticated, phoneVerifyLimiter, async (req, res) => {
   const { phone } = req.body;
   const userId = req.user.id;
 
@@ -1332,7 +1428,7 @@ app.post("/api/settings/phone/verify", isAuthenticated, async (req, res) => {
     return res.status(400).json({ error: "Verification code has expired. Please request a new code." });
   }
 
-  if (storedData.code !== code) {
+  if (String(storedData.code) !== String(code)) {
     return res.status(400).json({ error: "Invalid verification code" });
   }
 
@@ -1660,36 +1756,30 @@ app.post("/api/transactions/manual", isAuthenticated, validators.createTransacti
   }
 });
 
-// Bulk update transaction categories (must be before :id routes)
-app.put("/api/transactions/bulk/category", isAuthenticated, async (req, res) => {
+app.put("/api/transactions/bulk/category", isAuthenticated, validators.bulkCategory, handleValidationErrors, async (req, res) => {
   const { transactionIds, categoryId } = req.body;
 
-  if (!Array.isArray(transactionIds) || transactionIds.length === 0) {
-    return res.status(400).json({ error: "transactionIds must be a non-empty array" });
-  }
-
-  if (!categoryId) {
-    return res.status(400).json({ error: "categoryId is required" });
+  const ids = transactionIds.map((id) => parseInt(id, 10));
+  if (ids.some((n) => !Number.isInteger(n) || n < 1)) {
+    return res.status(400).json({ error: "Each transaction ID must be a positive integer" });
   }
 
   try {
-    // Verify all transactions belong to the user
     const txResult = await db.query(
       `SELECT id FROM transactions WHERE id = ANY($1) AND user_id = $2`,
-      [transactionIds, req.user.id]
+      [ids, req.user.id]
     );
 
-    if (txResult.rows.length !== transactionIds.length) {
+    if (txResult.rows.length !== ids.length) {
       return res.status(403).json({ error: "Some transactions not found or access denied" });
     }
 
-    // Bulk update
     await db.query(
       `UPDATE transactions SET category_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = ANY($2) AND user_id = $3`,
-      [categoryId, transactionIds, req.user.id]
+      [categoryId, ids, req.user.id]
     );
 
-    res.json({ message: `Updated ${transactionIds.length} transactions` });
+    res.json({ message: `Updated ${ids.length} transactions` });
   } catch (err) {
     console.error("Error bulk updating transaction categories:", err);
     res.status(500).json({ error: "Failed to update categories" });

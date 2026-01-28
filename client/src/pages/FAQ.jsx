@@ -3,11 +3,12 @@ import { Link } from 'react-router-dom';
 function FAQ() {
     const faqSections = [
         {
+            id: "technical-indicators",
             title: "Technical Indicators",
             items: [
                 {
                     question: "What is RSI (Relative Strength Index)?",
-                    answer: "RSI measures the speed and magnitude of price changes. It ranges from 0 to 100. When RSI is above 70, the stock is considered overbought (might be due for a price drop). When RSI is below 30, it's considered oversold (might be due for a price increase). Values between 30-70 are generally considered neutral."
+                    answer: "RSI measures the speed and magnitude of price changes. It ranges from 0 to 100. When RSI is above 70, the stock is considered overbought (might be due for a price drop). When RSI is below 30, it's considered oversold (might be due for a price increase). Values between 30–70 are generally considered neutral."
                 },
                 {
                     question: "What is MACD (Moving Average Convergence Divergence)?",
@@ -15,45 +16,51 @@ function FAQ() {
                 },
                 {
                     question: "What are Bollinger Bands?",
-                    answer: "Bollinger Bands consist of three lines: an upper band, middle band (moving average), and lower band. They show the volatility and relative price levels. When prices touch the upper band, the stock might be overbought. When prices touch the lower band, it might be oversold. The bands widen when volatility increases and narrow when volatility decreases."
+                    answer: "Bollinger Bands consist of three lines: an upper band, middle band (moving average), and lower band. They show volatility and relative price levels. When prices touch the upper band, the stock might be overbought; when they touch the lower band, it might be oversold. The bands widen when volatility increases and narrow when it decreases."
                 },
                 {
                     question: "What are Moving Averages (SMA and EMA)?",
-                    answer: "Moving averages smooth out price data to show trends. SMA (Simple Moving Average) calculates the average price over a set period. EMA (Exponential Moving Average) gives more weight to recent prices. Common periods are 20-day, 50-day, and 200-day. When the current price is above the moving average, it often indicates an uptrend. When below, it indicates a downtrend."
+                    answer: "Moving averages smooth out price data to show trends. SMA (Simple Moving Average) is the average price over a set period. EMA (Exponential Moving Average) gives more weight to recent prices. Common periods are 20-day, 50-day, and 200-day. When the current price is above the moving average, it often indicates an uptrend; when below, a downtrend."
                 }
             ]
         },
         {
+            id: "statistical-analysis",
             title: "Statistical Analysis",
             items: [
                 {
-                    question: "What is R-squared (R²)?",
-                    answer: "R-squared measures how well the price trend fits a straight line. It ranges from 0 to 1 (or 0% to 100%). A higher R² (closer to 1) means the price movement is more consistent and predictable. A lower R² means the price movement is more random. R² helps you understand if the trend is reliable or if there's a lot of noise in the data."
-                },
-                {
                     question: "What is Volatility?",
-                    answer: "Volatility measures how much a stock's price fluctuates over time. Higher volatility means larger price swings (more risk but potentially more reward). Lower volatility means smaller, steadier price movements. Volatility is typically shown as an annualized percentage, representing how much the price might vary in a year."
-                },
-                {
-                    question: "What do Mean, Median, and Standard Deviation mean?",
-                    answer: "Mean is the average price over the period. Median is the middle value when prices are sorted. Standard deviation shows how much prices vary from the average - higher values mean more variation. These help you understand if the current price is typical or unusual compared to historical prices."
+                    answer: "Volatility measures how much a stock's price fluctuates over time. Higher volatility means larger price swings (more risk but potentially more reward). Lower volatility means smaller, steadier movements. It's typically shown as an annualized percentage."
                 },
                 {
                     question: "What does Trend Direction mean?",
-                    answer: "Trend direction shows whether prices are generally moving up (bullish) or down (bearish) over the selected period. This is calculated using linear regression to find the overall direction. An upward trend suggests positive momentum, while a downward trend suggests negative momentum."
+                    answer: "Trend direction shows whether prices are generally moving up (bullish) or down (bearish) over the selected period, using linear regression. An upward trend suggests positive momentum; a downward trend suggests negative momentum."
                 }
             ]
         },
         {
-            title: "Predictions",
+            id: "budgeting",
+            title: "Budgeting",
             items: [
                 {
-                    question: "How accurate are the price predictions?",
-                    answer: "Our predictions use momentum-based analysis and are estimates, not guarantees. Stock prices are influenced by many factors that can't be predicted with certainty. The confidence percentage shows how reliable the prediction might be based on recent volatility. Always use predictions as one tool among many, not as the sole basis for investment decisions."
+                    question: "What is budget tracking?",
+                    answer: "TrendTracker helps you track spending by category. Connect your bank accounts (via Plaid) in Settings so transactions are imported automatically. Transactions are categorized so you can see where your money goes. Use the Budget page to set limits and monitor progress."
                 },
                 {
-                    question: "What does Prediction Confidence mean?",
-                    answer: "Confidence is a percentage (0-100%) indicating how reliable the prediction might be. Higher confidence means the model is more certain, usually because there's less volatility in recent price movements. Lower confidence suggests more uncertainty. Remember, even high confidence doesn't guarantee accuracy."
+                    question: "How do I set up budgets?",
+                    answer: "Go to the Budget page and click “Add Budget.” Choose a category (e.g. Dining, Shopping, Transport), set a monthly amount, and save. You can have multiple budgets per category. The overview shows total budget, total spent, and what’s left. You can edit or delete budgets from each category card."
+                },
+                {
+                    question: "What are budget alerts?",
+                    answer: "Budget alerts notify you when you’re over budget or approaching your limit in a category. Checks run daily at 8 AM. You’ll get an email and, if you’ve added and verified your phone in Settings, an SMS. Alerts mention which categories are over or near their limit and link you to the Budget page."
+                },
+                {
+                    question: "Where do my transactions come from?",
+                    answer: "Transactions come from linked bank accounts (Plaid). Link accounts in Settings → Bank accounts. Syncing runs automatically; you can also trigger a sync from the Transactions page. Transactions are grouped by category. You can adjust categories on individual transactions if needed."
+                },
+                {
+                    question: "What’s the difference between Income, Total Spent, and Budget Remaining?",
+                    answer: "Income is money coming in (e.g. deposits, paychecks). Total Spent is the sum of your categorized expenses in the period. Budget Remaining is your total budget minus total spent. Net Savings is income minus total spent. The monthly overview uses these to show whether you’re under or over budget overall."
                 }
             ]
         }
@@ -67,12 +74,19 @@ function FAQ() {
                 </Link>
                 <h1 style={{ marginBottom: '0.5rem' }}>Frequently Asked Questions</h1>
                 <p className="text-muted" style={{ fontSize: '1.1rem' }}>
-                    Learn about the technical indicators and analytics used in TrendTracker
+                    Technical indicators, statistics, and budgeting in TrendTracker
                 </p>
+                <nav style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem 1rem', marginTop: '1rem' }}>
+                    {faqSections.map((s) => (
+                        <a key={s.id} href={`#${s.id}`} style={{ fontSize: '0.95rem', color: 'var(--primary)', textDecoration: 'none' }}>
+                            {s.title}
+                        </a>
+                    ))}
+                </nav>
             </div>
 
             {faqSections.map((section, sectionIndex) => (
-                <div key={sectionIndex} style={{ marginBottom: '3rem' }}>
+                <div key={section.id || sectionIndex} id={section.id} style={{ marginBottom: '3rem', scrollMarginTop: '1rem' }}>
                     <h2 style={{ 
                         fontSize: '1.8rem', 
                         marginBottom: '1.5rem', 
@@ -109,9 +123,10 @@ function FAQ() {
 
             <div className="card glass-card" style={{ marginTop: '3rem', backgroundColor: 'var(--bg-card)' }}>
                 <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>Need More Help?</h3>
-                <p style={{ margin: 0, color: 'var(--text-muted)' }}>
-                    Remember that all technical indicators are tools to help inform your decisions, not guarantees of future performance. 
-                    Always do your own research and consider multiple factors before making investment decisions.
+                <p style={{ margin: 0, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                    Technical indicators and statistics are tools to inform your decisions, not guarantees of future performance. 
+                    Always do your own research. For budgeting, connect your accounts in <Link to="/settings" style={{ color: 'var(--primary)' }}>Settings</Link> and 
+                    set up category budgets on the <Link to="/budget" style={{ color: 'var(--primary)' }}>Budget</Link> page.
                 </p>
             </div>
         </div>

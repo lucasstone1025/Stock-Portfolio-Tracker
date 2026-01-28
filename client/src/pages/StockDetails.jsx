@@ -4,6 +4,7 @@ import axios from 'axios';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import CreateAlertModal from '../components/CreateAlertModal';
 import StockAnalytics from '../components/StockAnalytics';
+import { safeExternalUrl, safeImageUrl } from '../utils/formatters';
 
 function StockDetails() {
     const { symbol } = useParams();
@@ -134,10 +135,16 @@ function StockDetails() {
                     </div>
                     <div style={{ textAlign: 'right' }}>
                         <h1 style={{ margin: 0 }}>${stock.price}</h1>
-                        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
-                            <div>High: ${stock.dayhigh}</div>
-                            <div>Low: ${stock.daylow}</div>
-                        </div>
+                        {(stock.changePercent != null && !Number.isNaN(Number(stock.changePercent))) && (
+                            <div style={{
+                                fontSize: '1.1rem',
+                                fontWeight: '600',
+                                marginTop: '0.25rem',
+                                color: Number(stock.changePercent) >= 0 ? 'var(--success)' : 'var(--danger)'
+                            }}>
+                                {Number(stock.changePercent) >= 0 ? '+' : ''}{Number(stock.changePercent).toFixed(2)}%
+                            </div>
+                        )}
                         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '1rem' }}>
                             <button
                                 className="btn btn-success"
@@ -202,6 +209,7 @@ function StockDetails() {
 
                 <div className="analytics-wrapper">
                     <StockAnalytics 
+                        stock={stock}
                         analytics={analytics} 
                         loading={analyticsLoading} 
                         error={analyticsError}
@@ -216,12 +224,15 @@ function StockDetails() {
                 <div className="text-muted">No news found for this stock.</div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3" style={{ gap: '1.5rem' }}>
-                    {news.map(item => (
-                        <a href={item.url} target="_blank" rel="noopener noreferrer" key={item.id} style={{ textDecoration: 'none', color: 'inherit' }}>
+                    {news.map(item => {
+                        const href = safeExternalUrl(item.url);
+                        const imgSrc = safeImageUrl(item.image);
+                        return (
+                        <a href={href} target="_blank" rel="noopener noreferrer" key={item.id} style={{ textDecoration: 'none', color: 'inherit' }}>
                             <div className="card hover-card" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                                {item.image && (
+                                {imgSrc && (
                                     <div style={{ height: '150px', overflow: 'hidden', borderRadius: '8px 8px 0 0', marginBottom: '1rem' }}>
-                                        <img src={item.image} alt={item.headline} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                        <img src={imgSrc} alt={item.headline || ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                     </div>
                                 )}
                                 <div style={{ flex: 1 }}>
@@ -231,7 +242,7 @@ function StockDetails() {
                                 </div>
                             </div>
                         </a>
-                    ))}
+                    ); })}
                 </div>
             )}
         </div>
