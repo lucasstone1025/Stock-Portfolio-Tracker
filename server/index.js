@@ -407,18 +407,19 @@ cron.schedule('*/10 * * * *', refreshAllStockData);
 
 console.log('Automated stock refresh job scheduled to run every 10 minutes.');
 
-// Schedule daily transaction sync at 6 AM
-cron.schedule('0 6 * * *', async () => {
-  console.log('[TransactionSync] Starting daily sync...');
-  try {
-    const result = await transactionSyncService.syncAllTransactions(db);
-    console.log(`[TransactionSync] Daily sync complete: ${result.success}/${result.total} accounts synced`);
-  } catch (err) {
-    console.error('[TransactionSync] Daily sync failed:', err.message);
-  }
-});
+// Daily transaction sync disabled to conserve Plaid API calls
+// To re-enable, uncomment the cron job below
+// cron.schedule('0 6 * * *', async () => {
+//   console.log('[TransactionSync] Starting daily sync...');
+//   try {
+//     const result = await transactionSyncService.syncAllTransactions(db);
+//     console.log(`[TransactionSync] Daily sync complete: ${result.success}/${result.total} accounts synced`);
+//   } catch (err) {
+//     console.error('[TransactionSync] Daily sync failed:', err.message);
+//   }
+// });
 
-console.log('Daily transaction sync scheduled for 6 AM.');
+console.log('Daily transaction sync is DISABLED (manual sync only).');
 
 // Schedule budget alerts check at 8 AM daily
 cron.schedule('0 8 * * *', async () => {
@@ -2042,32 +2043,53 @@ app.post("/api/budgets", isAuthenticated, validators.createBudget, handleValidat
 
 app.put("/api/budgets/:id", isAuthenticated, validators.updateBudget, handleValidationErrors, async (req, res) => {
   const budgetId = req.params.id;
-  const { amount, periodType, isActive } = req.body;
-  
+  const { amount, categoryId, periodType, isActive } = req.body;
+
   try {
     // Check ownership
     const budgetResult = await db.query(
       `SELECT user_id FROM budgets WHERE id = $1`,
       [budgetId]
     );
-    
+
     if (budgetResult.rows.length === 0) {
       return res.status(404).json({ error: "Budget not found" });
     }
-    
+
     if (budgetResult.rows[0].user_id !== req.user.id) {
       return res.status(403).json({ error: "Access denied" });
     }
-    
+
+    // If changing category, verify the new category exists and belongs to user (or is a system category)
+    if (categoryId) {
+      const categoryResult = await db.query(
+        `SELECT id FROM budget_categories WHERE id = $1 AND (is_system = TRUE OR user_id = $2)`,
+        [categoryId, req.user.id]
+      );
+      if (categoryResult.rows.length === 0) {
+        return res.status(400).json({ error: "Invalid category" });
+      }
+
+      // Check if a budget already exists for this category (excluding current budget)
+      const existingBudget = await db.query(
+        `SELECT id FROM budgets WHERE category_id = $1 AND user_id = $2 AND id != $3`,
+        [categoryId, req.user.id, budgetId]
+      );
+      if (existingBudget.rows.length > 0) {
+        return res.status(400).json({ error: "A budget already exists for this category" });
+      }
+    }
+
     await db.query(`
       UPDATE budgets
       SET amount = COALESCE($1, amount),
-          period_type = COALESCE($2, period_type),
-          is_active = COALESCE($3, is_active),
+          category_id = COALESCE($2, category_id),
+          period_type = COALESCE($3, period_type),
+          is_active = COALESCE($4, is_active),
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $4
-    `, [amount, periodType, isActive, budgetId]);
-    
+      WHERE id = $5
+    `, [amount, categoryId, periodType, isActive, budgetId]);
+
     res.json({ message: "Budget updated" });
   } catch (err) {
     console.error("Error updating budget:", err);
@@ -2092,6 +2114,97 @@ app.delete("/api/budgets/:id", isAuthenticated, validators.idParam, handleValida
   } catch (err) {
     console.error("Error deleting budget:", err);
     res.status(500).json({ error: "Failed to delete budget" });
+  }
+});
+
+// Bulk budget save endpoint for budget planner
+app.post("/api/budgets/bulk", isAuthenticated, validators.bulkBudget, handleValidationErrors, async (req, res) => {
+  const { periodType, allocations } = req.body;
+
+  try {
+    // Get existing budgets for this user and period
+    const existingResult = await db.query(`
+      SELECT id, category_id, amount FROM budgets
+      WHERE user_id = $1 AND period_type = $2 AND is_active = TRUE
+    `, [req.user.id, periodType]);
+
+    const existingBudgets = new Map(
+      existingResult.rows.map(b => [b.category_id, { id: b.id, amount: parseFloat(b.amount) }])
+    );
+
+    // Verify all category IDs are valid (system or user-owned)
+    const categoryIds = allocations.map(a => a.categoryId);
+    if (categoryIds.length > 0) {
+      const categoryResult = await db.query(`
+        SELECT id FROM budget_categories
+        WHERE id = ANY($1) AND (is_system = TRUE OR user_id = $2)
+      `, [categoryIds, req.user.id]);
+
+      const validCategoryIds = new Set(categoryResult.rows.map(c => c.id));
+      const invalidIds = categoryIds.filter(id => !validCategoryIds.has(id));
+      if (invalidIds.length > 0) {
+        return res.status(400).json({ error: `Invalid category IDs: ${invalidIds.join(', ')}` });
+      }
+    }
+
+    // Process each allocation
+    const toCreate = [];
+    const toUpdate = [];
+    const toDelete = [];
+
+    for (const allocation of allocations) {
+      const { categoryId, amount } = allocation;
+      const existing = existingBudgets.get(categoryId);
+
+      if (amount > 0) {
+        if (existing) {
+          // Update if amount changed
+          if (existing.amount !== amount) {
+            toUpdate.push({ id: existing.id, amount });
+          }
+        } else {
+          // Create new budget
+          toCreate.push({ categoryId, amount });
+        }
+      } else if (existing) {
+        // Delete budget if amount is 0
+        toDelete.push(existing.id);
+      }
+    }
+
+    // Execute database operations
+    // Create new budgets
+    for (const budget of toCreate) {
+      await db.query(`
+        INSERT INTO budgets (user_id, category_id, amount, period_type)
+        VALUES ($1, $2, $3, $4)
+      `, [req.user.id, budget.categoryId, budget.amount, periodType]);
+    }
+
+    // Update existing budgets
+    for (const budget of toUpdate) {
+      await db.query(`
+        UPDATE budgets SET amount = $1, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2 AND user_id = $3
+      `, [budget.amount, budget.id, req.user.id]);
+    }
+
+    // Delete zero-amount budgets
+    if (toDelete.length > 0) {
+      await db.query(`
+        DELETE FROM budgets WHERE id = ANY($1) AND user_id = $2
+      `, [toDelete, req.user.id]);
+    }
+
+    res.json({
+      message: "Budget plan saved",
+      created: toCreate.length,
+      updated: toUpdate.length,
+      deleted: toDelete.length
+    });
+  } catch (err) {
+    console.error("Error saving bulk budget:", err);
+    res.status(500).json({ error: "Failed to save budget plan" });
   }
 });
 

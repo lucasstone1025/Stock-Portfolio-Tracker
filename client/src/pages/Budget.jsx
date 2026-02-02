@@ -302,12 +302,126 @@ function CreateBudgetModal({ isOpen, onClose, onSave, categories }) {
     );
 }
 
+function EditBudgetModal({ isOpen, onClose, onSave, categories, budget }) {
+    const [categoryId, setCategoryId] = useState('');
+    const [amount, setAmount] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        if (budget) {
+            setCategoryId(budget.categoryId?.toString() || '');
+            setAmount(budget.budgetAmount?.toString() || '');
+        }
+    }, [budget]);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setError(null);
+
+        try {
+            await axios.put(`/api/budgets/${budget.id}`, {
+                categoryId: parseInt(categoryId),
+                amount: parseFloat(amount)
+            });
+            onSave();
+            onClose();
+        } catch (err) {
+            setError(err.response?.data?.error || 'Failed to update budget');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (!isOpen || !budget) return null;
+
+    return (
+        <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000
+        }}>
+            <div className="card glass-card" style={{ width: '100%', maxWidth: '400px', padding: '2rem' }}>
+                <h3 style={{ marginBottom: '1.5rem' }}>Edit Budget</h3>
+                <form onSubmit={handleSubmit}>
+                    <div style={{ marginBottom: '1rem' }}>
+                        <label style={{ display: 'block', marginBottom: '0.5rem' }}>Category</label>
+                        <CategorySelect
+                            categories={categories}
+                            value={categoryId}
+                            onChange={setCategoryId}
+                            placeholder="Select category"
+                        />
+                    </div>
+
+                    <div style={{ marginBottom: '1.5rem' }}>
+                        <label style={{ display: 'block', marginBottom: '0.5rem' }}>Amount</label>
+                        <input
+                            type="number"
+                            value={amount}
+                            onChange={(e) => setAmount(e.target.value)}
+                            placeholder="0.00"
+                            step="0.01"
+                            min="0.01"
+                            required
+                            style={{
+                                width: '100%',
+                                padding: '0.75rem',
+                                border: '1px solid var(--border)',
+                                borderRadius: '8px',
+                                backgroundColor: 'var(--bg-secondary)',
+                                color: 'var(--text-primary)'
+                            }}
+                        />
+                    </div>
+
+                    {error && <p style={{ color: 'var(--danger)', marginBottom: '1rem' }}>{error}</p>}
+
+                    <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+                        <button type="button" onClick={onClose} style={{
+                            padding: '0.75rem 1.5rem',
+                            backgroundColor: 'transparent',
+                            color: 'var(--text-primary)',
+                            border: '1px solid var(--border)',
+                            borderRadius: '8px',
+                            cursor: 'pointer'
+                        }}>
+                            Cancel
+                        </button>
+                        <button type="submit" disabled={loading} style={{
+                            padding: '0.75rem 1.5rem',
+                            backgroundColor: 'var(--primary)',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            cursor: loading ? 'not-allowed' : 'pointer',
+                            opacity: loading ? 0.7 : 1
+                        }}>
+                            {loading ? 'Saving...' : 'Save Changes'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+}
+
 function Budget() {
     const [summary, setSummary] = useState(null);
     const [categories, setCategories] = useState([]);
     const [alerts, setAlerts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editingBudget, setEditingBudget] = useState(null);
     const [periodType, setPeriodType] = useState('monthly');
 
     useEffect(() => {
@@ -339,6 +453,11 @@ function Budget() {
         } catch (err) {
             console.error('Error deleting budget:', err);
         }
+    };
+
+    const handleEditBudget = (budget) => {
+        setEditingBudget(budget);
+        setShowEditModal(true);
     };
 
     if (loading) return <div>Loading...</div>;
@@ -399,39 +518,81 @@ function Budget() {
 
             <BudgetSummaryCard summary={summary} />
 
-            {/* Budget Categories */}
-            <h2 style={{ marginBottom: '1rem' }}>Category Budgets</h2>
-            {summary?.categories?.length > 0 ? (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-                    {summary.categories.map((cat) => (
-                        <BudgetCategoryCard
-                            key={cat.id}
-                            category={cat}
-                            onEdit={() => {/* TODO: Edit modal */}}
-                            onDelete={handleDeleteBudget}
-                        />
-                    ))}
-                </div>
-            ) : (
-                <div className="card glass-card" style={{ padding: '2rem', textAlign: 'center', marginBottom: '2rem' }}>
-                    <p style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>
-                        No budgets set up yet. Create your first budget to start tracking your spending.
-                    </p>
-                    <button
-                        onClick={() => setShowCreateModal(true)}
-                        style={{
-                            padding: '0.75rem 1.5rem',
+            {/* Budget Categories Section */}
+            <style>{`
+                @media (max-width: 768px) {
+                    .budget-section-grid {
+                        grid-template-columns: 1fr !important;
+                    }
+                }
+            `}</style>
+            <div className="budget-section-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 300px) 1fr', gap: '1.5rem', marginBottom: '2rem', alignItems: 'start' }}>
+                {/* Plan Full Budget Card */}
+                <Link to="/budget/planner" style={{ textDecoration: 'none' }}>
+                    <div className="card glass-card hover-card" style={{
+                        padding: '1.5rem',
+                        textAlign: 'center',
+                        background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%)',
+                        borderColor: 'var(--primary)',
+                        minHeight: '200px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center'
+                    }}>
+                        <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>📊</div>
+                        <h3 style={{ margin: '0 0 0.5rem 0', color: 'var(--text-primary)' }}>Plan Full Budget</h3>
+                        <p style={{ color: 'var(--text-muted)', margin: '0 0 1rem 0', fontSize: '0.875rem' }}>
+                            Allocate your entire budget across all categories in one view
+                        </p>
+                        <div style={{
+                            padding: '0.5rem 1rem',
                             backgroundColor: 'var(--primary)',
                             color: 'white',
-                            border: 'none',
-                            borderRadius: '8px',
-                            cursor: 'pointer'
-                        }}
-                    >
-                        Create Your First Budget
-                    </button>
+                            borderRadius: '6px',
+                            fontSize: '0.875rem',
+                            display: 'inline-block'
+                        }}>
+                            Open Planner
+                        </div>
+                    </div>
+                </Link>
+
+                {/* Category Budgets */}
+                <div>
+                    <h2 style={{ marginBottom: '1rem', marginTop: 0 }}>Category Budgets</h2>
+                    {summary?.categories?.length > 0 ? (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
+                            {summary.categories.map((cat) => (
+                                <BudgetCategoryCard
+                                    key={cat.id}
+                                    category={cat}
+                                    onEdit={handleEditBudget}
+                                    onDelete={handleDeleteBudget}
+                                />
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="card glass-card" style={{ padding: '2rem', textAlign: 'center' }}>
+                            <p style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>
+                                No individual budgets set up yet.
+                            </p>
+                            <button
+                                onClick={() => setShowCreateModal(true)}
+                                style={{
+                                    padding: '0.75rem 1.5rem',
+                                    backgroundColor: 'var(--primary)',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                + Add Category Budget
+                            </button>
+                        </div>
+                    )}
                 </div>
-            )}
+            </div>
 
             {/* Quick Links */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
@@ -460,6 +621,17 @@ function Budget() {
                 onClose={() => setShowCreateModal(false)}
                 onSave={fetchData}
                 categories={categories}
+            />
+
+            <EditBudgetModal
+                isOpen={showEditModal}
+                onClose={() => {
+                    setShowEditModal(false);
+                    setEditingBudget(null);
+                }}
+                onSave={fetchData}
+                categories={categories}
+                budget={editingBudget}
             />
         </div>
     );

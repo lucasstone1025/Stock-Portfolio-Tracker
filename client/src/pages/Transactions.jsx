@@ -367,7 +367,7 @@ function Transactions() {
     const [loading, setLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
     const [syncing, setSyncing] = useState(false);
-    const [syncStatus, setSyncStatus] = useState({ remaining: 3, dailyLimit: 3 });
+    const [syncStatus, setSyncStatus] = useState({ remaining: 1, dailyLimit: 1 });
 
     // Selection state
     const [selectedIds, setSelectedIds] = useState(new Set());
@@ -435,7 +435,7 @@ function Transactions() {
 
     const handleSync = async () => {
         if (syncStatus.remaining <= 0) {
-            alert('Daily sync limit reached (3 per day). Try again tomorrow.');
+            alert('Daily sync limit reached (1 per day). Try again tomorrow.');
             return;
         }
         setSyncing(true);

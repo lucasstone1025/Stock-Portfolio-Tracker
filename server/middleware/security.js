@@ -72,8 +72,8 @@ export const plaidLimiter = rateLimit({
  */
 export const syncLimiter = rateLimit({
     windowMs: 24 * 60 * 60 * 1000, // 1 day
-    max: 3, // 3 syncs per day per IP
-    message: { error: 'Please wait before syncing again. Sync is limited to 3 per day.' },
+    max: 1, // 1 sync per day per IP
+    message: { error: 'Please wait before syncing again. Sync is limited to 1 per day.' },
     standardHeaders: true,
     legacyHeaders: false,
 });
@@ -121,6 +121,7 @@ export const validators = {
     updateBudget: [
         param('id').isInt({ min: 1 }).withMessage('Valid budget ID is required'),
         body('amount').optional().isFloat({ min: 0.01 }).withMessage('Amount must be positive'),
+        body('categoryId').optional().isInt({ min: 1 }).withMessage('Valid category ID is required'),
         body('periodType')
             .optional()
             .isIn(['weekly', 'monthly', 'yearly'])
@@ -220,6 +221,15 @@ export const validators = {
     bulkCategory: [
         body('transactionIds').isArray({ min: 1 }).withMessage('transactionIds must be a non-empty array'),
         body('categoryId').isInt({ min: 1 }).withMessage('Valid category ID is required'),
+    ],
+
+    bulkBudget: [
+        body('periodType')
+            .isIn(['weekly', 'monthly', 'yearly'])
+            .withMessage('Period type must be weekly, monthly, or yearly'),
+        body('allocations').isArray().withMessage('Allocations must be an array'),
+        body('allocations.*.categoryId').isInt({ min: 1 }).withMessage('Valid category ID is required'),
+        body('allocations.*.amount').isFloat({ min: 0 }).withMessage('Amount must be non-negative'),
     ],
 };
 
