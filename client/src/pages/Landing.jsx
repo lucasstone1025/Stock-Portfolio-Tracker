@@ -294,9 +294,9 @@ function Landing() {
                 textAlign: 'center',
                 color: '#6b7280'
             }}>
-                <p>&copy; 2026 TrendTracker. All rights reserved.</p>
+                <p>2026 TrendTracker. Created by Lucas Stone & Blaine Baldwin @ FSU</p>
                 <p style={{ marginTop: '0.5rem' }}>
-                    <a href="mailto:support@trendtracker.co" style={{ color: '#9ca3af', textDecoration: 'none' }}>
+                    <a href="mailto:lucasstone1025@gmail.com" style={{ color: '#9ca3af', textDecoration: 'none' }}>
                         Contact Support
                     </a>
                 </p>
